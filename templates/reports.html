@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Reports & Analytics - {{ system_name }}{% endblock %}
+{% block page_title %}Reports & Compliance Analytics{% endblock %}
+
+{% block content %}
+<!-- Report Configuration & Filter Bar -->
+<div class="card border-0 shadow-sm rounded-4 mb-4 no-print">
+  <div class="card-body p-4">
+    <form method="GET" action="{{ url_for('reports.view_reports') }}" class="row g-3">
+      <div class="col-md-4">
+        <label class="form-label small fw-semibold">Report Category *</label>
+        <select class="form-select fw-semibold text-primary" name="type" onchange="this.form.submit()">
+          {% for r_key, r_title in report_titles.items() %}
+          <option value="{{ r_key }}" {% if report_type == r_key %}selected{% endif %}>{{ r_title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Start Date</label>
+        <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
+      </div>
+
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">End Date</label>
+        <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
+      </div>
+
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Vehicle Plate</label>
+        <input type="text" class="form-control font-monospace" name="vehicle_number" value="{{ vehicle_number }}" placeholder="e.g. MH12AB1234">
+      </div>
+
+      <div class="col-md-2 d-flex align-items-end gap-2">
+        <button type="submit" class="btn btn-primary flex-grow-1 shadow-sm"><i class="fa-solid fa-magnifying-glass me-1"></i>Generate</button>
+        <a href="{{ url_for('reports.view_reports', type=report_type) }}" class="btn btn-outline-secondary" title="Reset"><i class="fa-solid fa-rotate-left"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Report Header & Export Action Bar -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+  <div>
+    <h5 class="fw-bold text-dark mb-0">{{ report_title }}</h5>
+    <span class="text-muted small">Generated: {{ now.strftime('%Y-%m-%d %H:%M:%S UTC') }} | Total Records: <strong>{{ rows|length }}</strong></span>
+  </div>
+
+  <div class="d-flex gap-2 no-print">
+    <button type="button" class="btn btn-outline-dark btn-sm" onclick="window.print()">
+      <i class="fa-solid fa-print me-1"></i>Print
+    </button>
+    <a href="{{ url_for('reports.export_report', export_format='csv', type=report_type, start_date=start_date, end_date=end_date, vehicle_number=vehicle_number, status=status) }}" class="btn btn-outline-success btn-sm">
+      <i class="fa-solid fa-file-csv me-1"></i>CSV
+    </a>
+    <a href="{{ url_for('reports.export_report', export_format='excel', type=report_type, start_date=start_date, end_date=end_date, vehicle_number=vehicle_number, status=status) }}" class="btn btn-outline-primary btn-sm">
+      <i class="fa-solid fa-file-excel me-1"></i>Excel (XLSX)
+    </a>
+    <a href="{{ url_for('reports.export_report', export_format='pdf', type=report_type, start_date=start_date, end_date=end_date, vehicle_number=vehicle_number, status=status) }}" class="btn btn-outline-danger btn-sm">
+      <i class="fa-solid fa-file-pdf me-1"></i>PDF
+    </a>
+  </div>
+</div>
+
+<!-- Report Data Preview Table -->
+<div class="card border-0 shadow-sm rounded-4">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          {% for h in headers %}
+          <th>{{ h }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          {% for cell in r %}
+          <td class="{% if loop.first %}text-center text-muted small{% elif 'Plate' in headers[loop.index0] or 'Vehicle No' in headers[loop.index0] %}font-monospace fw-bold text-dark{% elif 'Time' in headers[loop.index0] or 'Date' in headers[loop.index0] %}font-monospace small{% else %}small{% endif %}">
+            {{ cell if cell is not none else '-' }}
+          </td>
+          {% endfor %}
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="{{ headers|length if headers else 5 }}" class="text-center py-5 text-muted">
+            <i class="fa-solid fa-folder-open fs-1 d-block mb-2 text-secondary"></i>
+            No records found for the selected report filters.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

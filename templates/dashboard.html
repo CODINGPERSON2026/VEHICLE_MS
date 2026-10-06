@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - {{ system_name }}{% endblock %}
+{% block page_title %}Operational Overview & Metrics{% endblock %}
+
+{% block content %}
+<!-- Quick Action Toolbar -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <span class="text-muted small"><i class="fa-solid fa-arrows-rotate fa-spin text-primary me-1"></i> Auto-refresh: <strong id="refresh-sec">{{ refresh_interval }}</strong>s</span>
+  </div>
+  <div class="d-flex gap-2">
+    {% if current_user.role == 'MAINGATE' %}
+    <a href="{{ url_for('movements.gate_control') }}" class="btn btn-sm btn-primary shadow-sm">
+      <i class="fa-solid fa-door-open me-1"></i> Open Gate Control Center
+    </a>
+    {% endif %}
+    {% if current_user.is_admin %}
+      {% if not demo_mode_enabled %}
+      <form method="POST" action="{{ url_for('settings.seed_demo_data') }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <button type="submit" class="btn btn-sm btn-outline-warning">
+          <i class="fa-solid fa-flask me-1"></i> Seed Demo Data
+        </button>
+      </form>
+      {% else %}
+      <form method="POST" action="{{ url_for('settings.clear_demo_data') }}" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <button type="submit" class="btn btn-sm btn-outline-secondary">
+          <i class="fa-solid fa-trash-can me-1"></i> Clear Demo Data
+        </button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<!-- Top Section: Two Big Counts (Centered Perfectly, Simple OUT & IN) -->
+<div class="row g-4 mb-4 justify-content-center text-center">
+  <!-- OUT VEHICLES: BIG COUNT IN RED -->
+  <div class="col-6 col-md-5 col-lg-4">
+    <a href="{{ url_for('movements.currently_outside') }}" class="text-decoration-none d-flex flex-column align-items-center">
+      <div class="fw-bold text-uppercase mb-1" style="color: #dc2626; font-size: 1.65rem; letter-spacing: 0.18em;">
+        OUT
+      </div>
+      <div class="fw-bold text-danger my-1" id="stat-vehicles-outside" style="font-size: 6.75rem; line-height: 0.95; letter-spacing: -0.04em; font-family: system-ui, -apple-system, sans-serif;">
+        0
+      </div>
+      <div class="text-muted small mt-2">
+        <i class="fa-solid fa-circle text-danger me-1" style="font-size: 0.45rem; vertical-align: middle;"></i> Currently outside depot
+      </div>
+    </a>
+  </div>
+
+  <!-- IN VEHICLES: BIG COUNT IN GREEN -->
+  <div class="col-6 col-md-5 col-lg-4">
+    <a href="{{ url_for('movements.currently_inside') }}" class="text-decoration-none d-flex flex-column align-items-center">
+      <div class="fw-bold text-uppercase mb-1" style="color: #16a34a; font-size: 1.65rem; letter-spacing: 0.18em;">
+        IN
+      </div>
+      <div class="fw-bold text-success my-1" id="stat-vehicles-inside" style="font-size: 6.75rem; line-height: 0.95; letter-spacing: -0.04em; font-family: system-ui, -apple-system, sans-serif;">
+        0
+      </div>
+      <div class="text-muted small mt-2">
+        <i class="fa-solid fa-circle text-success me-1" style="font-size: 0.45rem; vertical-align: middle;"></i> Stationed inside depot
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- Minimized Total Vehicles Pill -->
+<div class="text-center mb-4">
+  {% if current_user.role == 'MAINGATE' %}
+  <span class="btn btn-sm btn-light border rounded-pill px-3 py-1 shadow-sm d-inline-flex align-items-center gap-2 text-decoration-none" style="cursor: default;">
+    <i class="fa-solid fa-car text-primary"></i>
+    <span class="text-muted small fw-semibold">Total Vehicles:</span>
+    <strong class="text-dark font-monospace" id="stat-total-vehicles" style="font-size: 0.95rem;">-</strong>
+  </span>
+  {% else %}
+  <a href="{{ url_for('vehicles.list_vehicles') }}" class="btn btn-sm btn-light border rounded-pill px-3 py-1 shadow-sm text-decoration-none d-inline-flex align-items-center gap-2">
+    <i class="fa-solid fa-car text-primary"></i>
+    <span class="text-muted small fw-semibold">Total Vehicles:</span>
+    <strong class="text-dark font-monospace" id="stat-total-vehicles" style="font-size: 0.95rem;">-</strong>
+  </a>
+  {% endif %}
+</div>
+
+{% if current_user.role != 'MAINGATE' %}
+<!-- Charts Section (Admin & Operator View) -->
+<div class="row g-4 mb-4">
+  <!-- Daily IN vs OUT Chart -->
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm rounded-3">
+      <div class="card-header bg-white border-bottom-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold text-dark mb-0"><i class="fa-solid fa-chart-column me-2 text-primary"></i>Daily Ingress vs Egress (Last 7 Days)</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="chartDailyInOut" style="max-height: 280px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vehicle Type Distribution Chart -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm rounded-3">
+      <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
+        <h6 class="fw-bold text-dark mb-0"><i class="fa-solid fa-chart-pie me-2 text-primary"></i>Vehicle Category Distribution</h6>
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="chartVehicleTypes" style="max-height: 260px;"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- Weekly Movement Trend -->
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm rounded-3">
+      <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
+        <h6 class="fw-bold text-dark mb-0"><i class="fa-solid fa-chart-line me-2 text-success"></i>Weekly Vehicle Volume</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="chartWeekly" style="max-height: 220px;"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Denied Attempts Trend -->
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm rounded-3">
+      <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
+        <h6 class="fw-bold text-dark mb-0"><i class="fa-solid fa-chart-area me-2 text-danger"></i>Denied Gate Attempts Trend</h6>
+      </div>
+      <div class="card-body">
+        <canvas id="chartDenied" style="max-height: 220px;"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Recent Activity Live Feed Table -->
+<div class="card border-0 shadow-sm rounded-3">
+  <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+    <h6 class="fw-bold text-dark mb-0"><i class="fa-solid fa-list-check me-2 text-primary"></i>Live Gate Activity Feed</h6>
+    <span class="badge bg-light text-secondary border">Real-Time</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th style="width: 100px;">Time</th>
+          <th>Vehicle Number</th>
+          <th>RFID UID</th>
+          <th>Event</th>
+          <th>Status</th>
+          <th>Device / Gate</th>
+        </tr>
+      </thead>
+      <tbody id="activity-feed-body">
+        <tr>
+          <td colspan="6" class="text-center text-muted py-4">Loading real-time activity...</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let dailyChart, typeChart, weeklyChart, deniedChart;
+
+async function fetchStats() {
+  try {
+    const res = await fetch('/api/dashboard/stats');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val !== undefined && val !== null ? val : '-';
+    };
+
+    setVal('stat-total-vehicles', data.total_vehicles);
+    setVal('stat-vehicles-inside', data.vehicles_inside);
+    setVal('stat-vehicles-outside', data.vehicles_outside);
+  } catch (e) {
+    console.error("Failed to fetch dashboard stats", e);
+  }
+}
+
+async function fetchActivity() {
+  try {
+    const res = await fetch('/api/dashboard/recent_activity');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const tbody = document.getElementById('activity-feed-body');
+    if (data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No recent gate activity recorded.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.map(item => `
+      <tr>
+        <td class="font-monospace small">${item.timestamp}</td>
+        <td class="fw-bold text-dark font-monospace">${item.vehicle_number}</td>
+        <td class="text-muted small font-monospace">${item.rfid_uid}</td>
+        <td><span class="badge ${item.badge_class}">${item.event}</span></td>
+        <td><span class="small fw-semibold text-secondary">${item.status}</span></td>
+        <td class="small text-muted">${item.device}</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    console.error("Failed to fetch activity feed", e);
+  }
+}
+
+async function initCharts() {
+  if (!document.getElementById('chartDailyInOut')) return;
+  try {
+    const res = await fetch('/api/dashboard/charts');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    // 1. Daily In/Out
+    const ctxDaily = document.getElementById('chartDailyInOut').getContext('2d');
+    dailyChart = new Chart(ctxDaily, {
+      type: 'bar',
+      data: {
+        labels: data.daily_in_out.labels,
+        datasets: [
+          { label: 'Entries (IN)', data: data.daily_in_out.in_data, backgroundColor: '#10b981', borderRadius: 4 },
+          { label: 'Exits (OUT)', data: data.daily_in_out.out_data, backgroundColor: '#3b82f6', borderRadius: 4 }
+        ]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    // 2. Vehicle Types
+    const ctxTypes = document.getElementById('chartVehicleTypes').getContext('2d');
+    typeChart = new Chart(ctxTypes, {
+      type: 'doughnut',
+      data: {
+        labels: data.vehicle_types.labels,
+        datasets: [{
+          data: data.vehicle_types.data,
+          backgroundColor: ['#2563eb', '#06b6d4', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#64748b']
+        }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    // 3. Weekly
+    const ctxWeekly = document.getElementById('chartWeekly').getContext('2d');
+    weeklyChart = new Chart(ctxWeekly, {
+      type: 'line',
+      data: {
+        labels: data.weekly_movement.labels,
+        datasets: [{
+          label: 'Total Movements',
+          data: data.weekly_movement.data,
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          fill: true,
+          tension: 0.3
+        }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+
+    // 4. Denied
+    const ctxDenied = document.getElementById('chartDenied').getContext('2d');
+    deniedChart = new Chart(ctxDenied, {
+      type: 'line',
+      data: {
+        labels: data.denied_trend.labels,
+        datasets: [{
+          label: 'Denied Scans',
+          data: data.denied_trend.data,
+          borderColor: '#ef4444',
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          fill: true,
+          tension: 0.3
+        }]
+      },
+      options: { responsive: true, maintainAspectRatio: false }
+    });
+  } catch (e) {
+    console.error("Failed to load chart data", e);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  fetchStats();
+  fetchActivity();
+  initCharts();
+
+  const intervalSec = parseInt('{{ refresh_interval }}') || 5;
+  setInterval(() => {
+    fetchStats();
+    fetchActivity();
+  }, intervalSec * 1000);
+});
+</script>
+{% endblock %}

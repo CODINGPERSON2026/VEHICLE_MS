@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}{{ action_title }} - {{ system_name }}{% endblock %}
+{% block page_title %}{{ action_title }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10">
+    <div class="card border-0 shadow-sm rounded-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <div class="d-flex justify-content-between align-items-center">
+          <h6 class="fw-bold mb-0 text-dark">{{ action_title }}</h6>
+          <a href="{{ url_for('vehicles.list_vehicles') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="fa-solid fa-arrow-left me-1"></i>Back to Vehicles
+          </a>
+        </div>
+      </div>
+
+      <div class="card-body p-4">
+        <form method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+          <h6 class="fw-bold text-primary mb-3"><i class="fa-solid fa-car me-2"></i>Vehicle Information</h6>
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">BA Number *</label>
+              <input type="text" class="form-control font-monospace text-uppercase" name="registration_number"
+                value="{{ form_data.get('registration_number') if form_data else (vehicle.registration_number if vehicle else '') }}"
+                placeholder="e.g. BA1234" required>
+              <div class="form-text">Will be automatically normalized (uppercase alphanumeric).</div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Vehicle Type *</label>
+              <select class="form-select" name="vehicle_type" required>
+                {% set current_val = form_data.get('vehicle_type') if form_data else (vehicle.vehicle_type if vehicle else '') %}
+                {% for t in types %}
+                <option value="{{ t }}" {% if current_val == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Date of Issue</label>
+              <input type="date" class="form-control" name="issue_date"
+                value="{{ form_data.get('issue_date') if form_data else (vehicle.issue_date.strftime('%Y-%m-%d') if vehicle and vehicle.issue_date else '') }}">
+              <div class="form-text">Date the vehicle was issued / registered.</div>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <h6 class="fw-bold text-primary mb-0"><i class="fa-solid fa-user-shield me-2"></i>Custodian Details</h6>
+            {% if not vehicle and first_vehicle and (first_vehicle.custodian_name or first_vehicle.armynumber) %}
+            <span class="badge bg-light text-muted border fw-normal" style="font-size: 0.72rem;">
+              <i class="fa-solid fa-wand-magic-sparkles text-primary me-1"></i>Pre-filled from primary record (editable)
+            </span>
+            {% endif %}
+          </div>
+
+          <div class="row g-3 mb-4">
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Custodian Name</label>
+              <input type="text" class="form-control" name="custodian_name"
+                value="{{ form_data.get('custodian_name') if form_data else (vehicle.custodian_name if vehicle else (first_vehicle.custodian_name if first_vehicle else '')) }}"
+                placeholder="e.g. Subedar Rajesh Sharma">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Army Number</label>
+              <input type="text" class="form-control font-monospace text-uppercase" name="armynumber"
+                value="{{ form_data.get('armynumber') if form_data else (vehicle.armynumber if vehicle else (first_vehicle.armynumber if first_vehicle else '')) }}"
+                placeholder="e.g. JC-847291A">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold">Mobile Number</label>
+              <input type="tel" class="form-control" name="mobile_number"
+                value="{{ form_data.get('mobile_number') if form_data else (vehicle.mobile_number if vehicle else (first_vehicle.mobile_number if first_vehicle else '')) }}"
+                placeholder="e.g. 9876543210">
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2">
+            <a href="{{ url_for('vehicles.list_vehicles') }}" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary px-4 shadow-sm">
+              <i class="fa-solid fa-floppy-disk me-1"></i>Save Vehicle Record
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Movement Register - {{ system_name }}{% endblock %}
+{% block page_title %}Digital Vehicle Gate Movement Register{% endblock %}
+
+{% block content %}
+<!-- Search & Date Filter Card -->
+<div class="card border-0 shadow-sm rounded-3 mb-4 no-print">
+  <div class="card-body">
+    <form method="GET" action="{{ url_for('movements.movement_register') }}" class="row g-2 align-items-center">
+      <div class="col-md-3">
+        <div class="input-group">
+          <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+          <input type="text" class="form-control" name="search" value="{{ search }}" placeholder="Plate, Driver, Mobile...">
+        </div>
+      </div>
+
+      <div class="col-md-2">
+        <input type="date" class="form-control" name="start_date" value="{{ start_date }}" placeholder="Start Date" title="From Date">
+      </div>
+
+      <div class="col-md-2">
+        <input type="date" class="form-control" name="end_date" value="{{ end_date }}" placeholder="End Date" title="To Date">
+      </div>
+
+      <div class="col-md-2">
+        <select class="form-select" name="status">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-secondary flex-grow-1"><i class="fa-solid fa-filter me-1"></i>Filter</button>
+        <button type="button" class="btn btn-outline-dark" onclick="window.print()" title="Print Register"><i class="fa-solid fa-print"></i></button>
+        <a href="{{ url_for('movements.movement_register') }}" class="btn btn-outline-secondary" title="Reset"><i class="fa-solid fa-rotate-left"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Digital Gate Register Table -->
+<div class="card border-0 shadow-sm rounded-4">
+  <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+    <div>
+      <h6 class="fw-bold mb-0 text-dark">Vehicle Movement Audit Ledger</h6>
+      <small class="text-muted">Total matching records: <strong>{{ pagination.total }}</strong></small>
+    </div>
+    {% if current_user.is_admin %}
+    <form method="POST" action="{{ url_for('settings.clear_all_movement_history') }}" onsubmit="return confirm('WARNING: Are you sure you want to delete ALL vehicle movement history records? This cannot be undone.');" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-sm btn-outline-danger shadow-sm">
+        <i class="fa-solid fa-trash-can me-1"></i>Clear All History (Fresh Start)
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th>#</th>
+          <th>Vehicle Number</th>
+          <th>Type</th>
+          <th>Driver</th>
+          <th>RFID UID</th>
+          <th>Entry Time</th>
+          <th>Exit Time</th>
+          <th>Duration</th>
+          <th>Gate / Device</th>
+          <th>Status</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in movements %}
+        <tr>
+          <td class="text-muted small">{{ loop.index + (pagination.page - 1) * pagination.per_page }}</td>
+          <td>
+            <span class="font-monospace fw-bold text-dark">{{ m.vehicle.registration_number if m.vehicle else 'N/A' }}</span>
+            {% if m.is_manual %}<span class="badge bg-warning text-dark ms-1" style="font-size: 0.6rem;">MANUAL</span>{% endif %}
+            {% if m.is_demo %}<span class="badge bg-light text-muted border ms-1" style="font-size: 0.6rem;">DEMO</span>{% endif %}
+          </td>
+          <td class="small">
+            <span class="fw-semibold">{{ m.driver_name or (m.vehicle.driver_name if m.vehicle else '-') }}</span>
+            {% if m.driver_name and m.vehicle and m.vehicle.driver_name and m.driver_name != m.vehicle.driver_name %}
+            <small class="text-muted d-block" style="font-size: 0.7rem;">Owner: {{ m.vehicle.driver_name }}</small>
+            {% endif %}
+          </td>
+          <td class="font-monospace small text-primary">{{ m.rfid_card.uid if m.rfid_card else '-' }}</td>
+          <td class="small font-monospace">{{ m.entry_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td class="small font-monospace">{{ m.exit_time.strftime('%Y-%m-%d %H:%M:%S') if m.exit_time else '-' }}</td>
+          <td class="small fw-semibold">{{ m.formatted_duration }}</td>
+          <td class="small text-muted">{{ m.entry_device.device_name if m.entry_device else 'System' }}</td>
+          <td>
+            {% if m.status == 'INSIDE' %}<span class="badge bg-success">INSIDE</span>
+            {% elif m.status == 'OUTSIDE' %}<span class="badge bg-info">OUTSIDE</span>
+            {% elif m.status == 'EXIT_EXCEPTION' %}<span class="badge bg-danger">EXIT EXCEPTION</span>
+            {% elif m.status == 'MANUAL_REVIEW' %}<span class="badge bg-warning text-dark">MANUAL REVIEW</span>
+            {% else %}<span class="badge bg-secondary">{{ m.status }}</span>{% endif %}
+          </td>
+          <td class="small text-muted">{{ m.manual_reason if m.is_manual else (m.remarks or '-') }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="11" class="text-center py-5 text-muted">
+            <i class="fa-solid fa-book-open fs-1 d-block mb-2 text-secondary"></i>
+            No movement records found for the selected filter.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if pagination.pages > 1 %}
+  <div class="card-footer bg-white border-top py-3 d-flex justify-content-between align-items-center no-print">
+    <span class="small text-muted">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    <ul class="pagination pagination-sm mb-0">
+      {% if pagination.has_prev %}
+      <li class="page-item"><a class="page-link" href="{{ url_for('movements.movement_register', page=pagination.prev_num, search=search, status=status, start_date=start_date, end_date=end_date) }}">Previous</a></li>
+      {% endif %}
+      {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+          <li class="page-item {% if p == pagination.page %}active{% endif %}">
+            <a class="page-link" href="{{ url_for('movements.movement_register', page=p, search=search, status=status, start_date=start_date, end_date=end_date) }}">{{ p }}</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      {% if pagination.has_next %}
+      <li class="page-item"><a class="page-link" href="{{ url_for('movements.movement_register', page=pagination.next_num, search=search, status=status, start_date=start_date, end_date=end_date) }}">Next</a></li>
+      {% endif %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

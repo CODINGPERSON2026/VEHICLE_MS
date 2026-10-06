@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block title %}Vehicle {{ vehicle.registration_number }} - {{ system_name }}{% endblock %}
+{% block page_title %}Vehicle Details: {{ vehicle.registration_number }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ url_for('vehicles.list_vehicles') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="fa-solid fa-arrow-left me-1"></i>All Vehicles
+    </a>
+    <span class="fs-4 fw-bold font-monospace text-dark">{{ vehicle.registration_number }}</span>
+    {% if not vehicle.is_active %}
+    <span class="badge bg-secondary">DEACTIVATED</span>
+    {% elif vehicle.auth_status == 'AUTHORIZED' %}
+    <span class="badge bg-success">AUTHORIZED</span>
+    {% elif vehicle.auth_status == 'BLOCKED' %}
+    <span class="badge bg-danger">BLOCKED</span>
+    {% elif vehicle.auth_status == 'EXPIRED' %}
+    <span class="badge bg-warning text-dark">EXPIRED</span>
+    {% else %}
+    <span class="badge bg-secondary">{{ vehicle.auth_status }}</span>
+    {% endif %}
+  </div>
+
+  <div class="d-flex gap-2">
+    {% if current_user.role != Role.REPORT_VIEWER %}
+    <a href="{{ url_for('vehicles.edit_vehicle', vehicle_id=vehicle.id) }}" class="btn btn-outline-primary btn-sm">
+      <i class="fa-solid fa-pen-to-square me-1"></i>Edit Details
+    </a>
+
+    {% if vehicle.is_active %}
+    <form method="POST" action="{{ url_for('vehicles.deactivate_vehicle', vehicle_id=vehicle.id) }}" class="d-inline" onsubmit="return confirm('Deactivate this vehicle? Historical movement records will be preserved.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-outline-warning btn-sm" title="Deactivate (Preserve History)">
+        <i class="fa-solid fa-user-slash me-1"></i>Deactivate
+      </button>
+    </form>
+    {% else %}
+    <form method="POST" action="{{ url_for('vehicles.reactivate_vehicle', vehicle_id=vehicle.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-outline-success btn-sm" title="Reactivate Vehicle">
+        <i class="fa-solid fa-user-check me-1"></i>Reactivate
+      </button>
+    </form>
+    {% endif %}
+
+    {% if current_user.is_admin %}
+    <form method="POST" action="{{ url_for('vehicles.delete_vehicle', vehicle_id=vehicle.id) }}" class="d-inline" onsubmit="return confirm('Permanently delete vehicle {{ vehicle.registration_number }}? This will also unassign all its RFID cards.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete Vehicle Record">
+        <i class="fa-solid fa-trash-can me-1"></i>Delete
+      </button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- Vehicle Profile Card -->
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm rounded-4 h-100">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-circle-info me-2 text-primary"></i>General Information</h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-6">
+            <div class="text-muted small">BA Number</div>
+            <div class="fw-bold font-monospace">{{ vehicle.registration_number }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Vehicle Type</div>
+            <div class="fw-bold">{{ vehicle.vehicle_type }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Date of Issue</div>
+            <div class="fw-bold">{{ vehicle.issue_date.strftime('%Y-%m-%d') if vehicle.issue_date else '-' }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Custodian Name</div>
+            <div class="fw-bold">{{ vehicle.custodian_name or 'Unassigned' }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Army Number</div>
+            <div class="fw-bold font-monospace">{{ vehicle.armynumber or '-' }}</div>
+          </div>
+          <div class="col-6">
+            <div class="text-muted small">Mobile Number</div>
+            <div class="fw-bold">{{ vehicle.mobile_number or '-' }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Assigned RFID Cards -->
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm rounded-4 h-100">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-id-card me-2 text-primary"></i>Assigned RFID Cards ({{ cards|length }})</h6>
+        {% if current_user.role != Role.REPORT_VIEWER %}
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#assignNewCardModal">
+          <i class="fa-solid fa-plus me-1"></i>Assign Card
+        </button>
+        {% endif %}
+      </div>
+      <div class="card-body p-0">
+        {% if cards %}
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light small text-secondary">
+              <tr>
+                <th>RFID UID</th>
+                <th>Status</th>
+                <th>Assigned Date</th>
+                <th>Expiry</th>
+                <th class="text-end">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in cards %}
+              <tr>
+                <td class="font-monospace fw-bold text-primary">{{ c.uid }}</td>
+                <td>
+                  {% if c.card_status == 'ACTIVE' %}<span class="badge bg-success">ACTIVE</span>
+                  {% elif c.card_status == 'BLOCKED' %}<span class="badge bg-danger">BLOCKED</span>
+                  {% elif c.card_status == 'LOST' %}<span class="badge bg-dark">LOST</span>
+                  {% else %}<span class="badge bg-secondary">{{ c.card_status }}</span>{% endif %}
+                </td>
+                <td class="small">{{ c.assigned_date.strftime('%Y-%m-%d') if c.assigned_date else '-' }}</td>
+                <td class="small">{{ c.expiry_date.strftime('%Y-%m-%d') if c.expiry_date else 'Permanent' }}</td>
+                <td class="text-end">
+                  {% if current_user.role != Role.REPORT_VIEWER %}
+                  <form method="POST" action="{{ url_for('rfid.unassign_card', card_id=c.id) }}" class="d-inline" onsubmit="return confirm('Unassign RFID Card {{ c.uid }} from this vehicle?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Unassign RFID Card from Vehicle">
+                      <i class="fa-solid fa-link-slash me-1"></i>Unassign
+                    </button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted small">
+          <i class="fa-solid fa-id-card-clip fs-2 d-block mb-2 text-secondary"></i>
+          No RFID cards currently assigned to this vehicle.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Movement History for this Vehicle -->
+<div class="card border-0 shadow-sm rounded-4">
+  <div class="card-header bg-white border-bottom py-3">
+    <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-clock-rotate-left me-2 text-primary"></i>Recent Movement History</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-secondary">
+        <tr>
+          <th>Entry Time</th>
+          <th>Exit Time</th>
+          <th>Duration</th>
+          <th>Direction</th>
+          <th>Gate / Device</th>
+          <th>Status</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in movements %}
+        <tr>
+          <td class="small font-monospace">{{ m.entry_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td class="small font-monospace">{{ m.exit_time.strftime('%Y-%m-%d %H:%M:%S') if m.exit_time else 'Still Inside' }}</td>
+          <td class="small fw-semibold">{{ m.formatted_duration }}</td>
+          <td><span class="badge bg-light text-dark border">{{ m.direction }}</span></td>
+          <td class="small text-muted">{{ m.entry_device.device_name if m.entry_device else 'System' }}</td>
+          <td>
+            {% if m.status == 'INSIDE' %}<span class="badge bg-success">INSIDE</span>
+            {% elif m.status == 'OUTSIDE' %}<span class="badge bg-info">OUTSIDE</span>
+            {% else %}<span class="badge bg-warning text-dark">{{ m.status }}</span>{% endif %}
+          </td>
+          <td class="small text-muted">{{ m.remarks or (m.manual_reason if m.is_manual else '-') }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center py-4 text-muted">No historical movement records found for this vehicle.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Assign New Card to this Vehicle -->
+<div class="modal fade" id="assignNewCardModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content rounded-4 border-0">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">Assign RFID Card to {{ vehicle.registration_number }}</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('rfid.assign_card') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <input type="hidden" name="vehicle_id" value="{{ vehicle.id }}"/>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">RFID UID *</label>
+            <input type="text" class="form-control font-monospace text-uppercase" name="uid" placeholder="e.g. A37F291C" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Card Expiry Date (Optional)</label>
+            <input type="date" class="form-control" name="expiry_date">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Remarks</label>
+            <input type="text" class="form-control" name="remarks" placeholder="Optional notes...">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check me-1"></i>Assign Card</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Denied Attempts - {{ system_name }}{% endblock %}
+{% block page_title %}Unauthorized & Denied Scan Attempts{% endblock %}
+
+{% block content %}
+<!-- Search & Filter Bar -->
+<div class="card border-0 shadow-sm rounded-3 mb-4">
+  <div class="card-body">
+    <form method="GET" action="{{ url_for('movements.denied_attempts') }}" class="row g-2 align-items-center">
+      <div class="col-md-4">
+        <div class="input-group">
+          <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+          <input type="text" class="form-control" name="search" value="{{ search }}" placeholder="Search Plate, RFID UID, Remarks...">
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <select class="form-select" name="reason">
+          <option value="">All Denial Reasons</option>
+          {% for r in reasons %}
+          <option value="{{ r }}" {% if reason == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-secondary flex-grow-1"><i class="fa-solid fa-filter me-1"></i>Filter</button>
+        <a href="{{ url_for('movements.denied_attempts') }}" class="btn btn-outline-secondary" title="Reset"><i class="fa-solid fa-rotate-left"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Denied Attempts Table -->
+<div class="card border-0 shadow-sm rounded-4">
+  <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+    <div>
+      <h6 class="fw-bold mb-0 text-dark">Security Exception Ledger</h6>
+      <small class="text-muted">Total recorded exceptions: <strong>{{ pagination.total }}</strong></small>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th>Timestamp</th>
+          <th>RFID UID</th>
+          <th>Vehicle Plate</th>
+          <th>Gate / Device</th>
+          <th>Direction</th>
+          <th>Denial Reason</th>
+          <th>Remarks & Diagnostics</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in attempts %}
+        <tr>
+          <td class="font-monospace small">{{ a.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td>
+            <span class="font-monospace fw-bold text-primary">{{ a.rfid_uid or 'Unknown' }}</span>
+            {% if a.is_demo %}<span class="badge bg-light text-muted border ms-1" style="font-size: 0.6rem;">DEMO</span>{% endif %}
+          </td>
+          <td>
+            {% if a.vehicle %}
+            <a href="{{ url_for('vehicles.view_vehicle', vehicle_id=a.vehicle.id) }}" class="font-monospace fw-bold text-dark text-decoration-none">
+              {{ a.vehicle.registration_number }}
+            </a>
+            {% else %}
+            <span class="font-monospace text-muted">{{ a.vehicle_number or '-' }}</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ a.device.device_name if a.device else 'System' }}</td>
+          <td><span class="badge bg-light text-dark border">{{ a.direction }}</span></td>
+          <td>
+            {% if a.reason == 'UNKNOWN_RFID' %}<span class="badge bg-danger">UNKNOWN RFID</span>
+            {% elif a.reason == 'BLOCKED_CARD' or a.reason == 'BLOCKED_VEHICLE' %}<span class="badge bg-danger">BLOCKED</span>
+            {% elif a.reason == 'EXPIRED_AUTHORIZATION' or a.reason == 'EXPIRED_CARD' %}<span class="badge bg-warning text-dark">EXPIRED</span>
+            {% elif a.reason == 'DUPLICATE_ENTRY' %}<span class="badge bg-info text-dark">ALREADY INSIDE</span>
+            {% elif a.reason == 'NO_ACTIVE_ENTRY' %}<span class="badge bg-secondary">NO ACTIVE ENTRY</span>
+            {% else %}<span class="badge bg-danger">{{ a.reason }}</span>{% endif %}
+          </td>
+          <td class="small text-muted">{{ a.remarks or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center py-5 text-muted">
+            <i class="fa-solid fa-shield-check fs-1 d-block mb-2 text-success"></i>
+            No unauthorized access attempts recorded.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if pagination.pages > 1 %}
+  <div class="card-footer bg-white border-top py-3 d-flex justify-content-between align-items-center">
+    <span class="small text-muted">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    <ul class="pagination pagination-sm mb-0">
+      {% if pagination.has_prev %}
+      <li class="page-item"><a class="page-link" href="{{ url_for('movements.denied_attempts', page=pagination.prev_num, search=search, reason=reason) }}">Previous</a></li>
+      {% endif %}
+      {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+          <li class="page-item {% if p == pagination.page %}active{% endif %}">
+            <a class="page-link" href="{{ url_for('movements.denied_attempts', page=p, search=search, reason=reason) }}">{{ p }}</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      {% if pagination.has_next %}
+      <li class="page-item"><a class="page-link" href="{{ url_for('movements.denied_attempts', page=pagination.next_num, search=search, reason=reason) }}">Next</a></li>
+      {% endif %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

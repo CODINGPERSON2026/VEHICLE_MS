@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Device Management - {{ system_name }}{% endblock %}
+{% block page_title %}Connected Hardware & Gate Devices{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="text-muted small">Manage ESP32 microcontrollers, RFID modules, and edge barrier interfaces.</div>
+  {% if current_user.is_admin %}
+  <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#newDeviceModal">
+    <i class="fa-solid fa-plus me-1"></i>Register New Hardware Device
+  </button>
+  {% endif %}
+</div>
+
+<!-- Devices Table -->
+<div class="card border-0 shadow-sm rounded-4">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th>Device ID</th>
+          <th>Device Name</th>
+          <th>Type</th>
+          <th>Gate Location</th>
+          <th>Direction</th>
+          <th>IP Address</th>
+          <th>Health Status</th>
+          <th>Last Heartbeat</th>
+          <th>Last Event</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in devices %}
+        <tr class="{% if not d.is_active %}table-secondary opacity-75{% endif %}">
+          <td><span class="font-monospace fw-bold text-dark">{{ d.device_id }}</span></td>
+          <td class="fw-semibold">{{ d.device_name }}</td>
+          <td><span class="badge bg-light text-dark border">{{ d.device_type }}</span></td>
+          <td>{{ d.gate }}</td>
+          <td><span class="badge bg-primary-subtle text-primary border">{{ d.direction }}</span></td>
+          <td class="font-monospace small text-muted">{{ d.ip_address or 'Pending...' }}</td>
+          <td>
+            {% if not d.is_active %}
+            <span class="badge bg-secondary">DISABLED</span>
+            {% elif d.is_online() %}
+            <span class="badge bg-success"><span class="pulse-dot pulse-green"></span>ONLINE</span>
+            {% else %}
+            <span class="badge bg-danger">OFFLINE</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ d.last_seen.strftime('%Y-%m-%d %H:%M:%S') if d.last_seen else 'Never' }}</td>
+          <td class="small text-muted">{{ d.last_event or '-' }}</td>
+          <td class="text-end">
+            {% if current_user.is_admin %}
+            <div class="btn-group btn-group-sm">
+              <form method="POST" action="{{ url_for('devices.toggle_device', device_id=d.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit" class="btn btn-outline-secondary" title="{% if d.is_active %}Disable Device{% else %}Enable Device{% endif %}">
+                  <i class="fa-solid {% if d.is_active %}fa-pause text-warning{% else %}fa-play text-success{% endif %}"></i>
+                </button>
+              </form>
+              <form method="POST" action="{{ url_for('devices.rotate_key', device_id=d.id) }}" class="d-inline" onsubmit="return confirm('Rotate API key? You must update the new key in the ESP32 firmware.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit" class="btn btn-outline-danger" title="Rotate API Key">
+                  <i class="fa-solid fa-key"></i>
+                </button>
+              </form>
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10" class="text-center py-5 text-muted">
+            <i class="fa-solid fa-microchip fs-1 d-block mb-2 text-secondary"></i>
+            No hardware devices registered yet.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Register New Hardware Device -->
+<div class="modal fade" id="newDeviceModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content rounded-4 border-0">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">Register New Gate Device</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('devices.register_device') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Device ID (Unique) *</label>
+            <input type="text" class="form-control font-monospace text-uppercase" name="device_id" placeholder="e.g. GATE_ENTRY_01" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Device Name *</label>
+            <input type="text" class="form-control" name="device_name" placeholder="e.g. Main Gate Ingress Reader" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Device Type *</label>
+            <select class="form-select" name="device_type" required>
+              {% for dt in device_types %}
+              <option value="{{ dt }}">{{ dt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Gate Location</label>
+              <input type="text" class="form-control" name="gate" value="Main Gate" placeholder="Gate name">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Direction *</label>
+              <select class="form-select" name="direction">
+                {% for d in directions %}
+                <option value="{{ d }}">{{ d }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check me-1"></i>Register & Generate Key</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

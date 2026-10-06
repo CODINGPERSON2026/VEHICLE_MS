@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Logs - {{ system_name }}{% endblock %}
+{% block page_title %}Security & System Audit Logs{% endblock %}
+
+{% block content %}
+<!-- Search & Filter Card -->
+<div class="card border-0 shadow-sm rounded-3 mb-4">
+  <div class="card-body">
+    <form method="GET" action="{{ url_for('settings.audit_logs') }}" class="row g-2 align-items-center">
+      <div class="col-md-5">
+        <div class="input-group">
+          <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+          <input type="text" class="form-control" name="search" value="{{ search }}" placeholder="Search description, user, vehicle, device...">
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <input type="text" class="form-control" name="action" value="{{ action }}" placeholder="Filter Action (e.g. LOGIN, VEHICLE_ENTRY)">
+      </div>
+
+      <div class="col-md-4 d-flex gap-2">
+        <button type="submit" class="btn btn-secondary flex-grow-1"><i class="fa-solid fa-filter me-1"></i>Filter</button>
+        <a href="{{ url_for('settings.audit_logs') }}" class="btn btn-outline-secondary" title="Reset"><i class="fa-solid fa-rotate-left"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Audit Trail Table -->
+<div class="card border-0 shadow-sm rounded-4">
+  <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+    <div>
+      <h6 class="fw-bold mb-0 text-dark">Immutable Audit Log Ledger</h6>
+      <small class="text-muted">Total recorded events: <strong>{{ pagination.total }}</strong></small>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th>Timestamp (UTC)</th>
+          <th>User</th>
+          <th>Action</th>
+          <th>Vehicle</th>
+          <th>Device</th>
+          <th>Description</th>
+          <th>IP Address</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in logs %}
+        <tr>
+          <td class="font-monospace small text-muted">{{ l.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td>
+            <span class="fw-semibold small text-dark"><i class="fa-solid fa-user-circle me-1 text-secondary"></i>{{ l.username }}</span>
+          </td>
+          <td><span class="badge bg-light text-dark border">{{ l.action }}</span></td>
+          <td class="font-monospace small fw-bold">{{ l.related_vehicle or '-' }}</td>
+          <td class="small text-muted">{{ l.related_device or '-' }}</td>
+          <td class="small">{{ l.description }}</td>
+          <td class="font-monospace small text-muted">{{ l.ip_address or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center py-5 text-muted">No audit records found matching query.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if pagination.pages > 1 %}
+  <div class="card-footer bg-white border-top py-3 d-flex justify-content-between align-items-center">
+    <span class="small text-muted">Page {{ pagination.page }} of {{ pagination.pages }}</span>
+    <ul class="pagination pagination-sm mb-0">
+      {% if pagination.has_prev %}
+      <li class="page-item"><a class="page-link" href="{{ url_for('settings.audit_logs', page=pagination.prev_num, search=search, action=action) }}">Previous</a></li>
+      {% endif %}
+      {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+          <li class="page-item {% if p == pagination.page %}active{% endif %}">
+            <a class="page-link" href="{{ url_for('settings.audit_logs', page=p, search=search, action=action) }}">{{ p }}</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      {% if pagination.has_next %}
+      <li class="page-item"><a class="page-link" href="{{ url_for('settings.audit_logs', page=pagination.next_num, search=search, action=action) }}">Next</a></li>
+      {% endif %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

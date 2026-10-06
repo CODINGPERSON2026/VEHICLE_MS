@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}ANPR Test Mode - {{ system_name }}{% endblock %}
+{% block page_title %}ANPR Engine Test & Simulation Mode{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <!-- Simulation Form -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm rounded-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-camera me-2 text-primary"></i>Simulate OCR License Plate Detection</h6>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST" action="{{ url_for('devices.anpr_test') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Detected License Plate *</label>
+            <input type="text" class="form-control font-monospace text-uppercase fs-5 fw-bold" name="plate_text" placeholder="e.g. MH12AB1234" required autofocus>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">OCR Confidence Score (%) *</label>
+            <div class="input-group">
+              <input type="number" class="form-control" name="confidence" value="95.5" step="0.1" min="0" max="100" required>
+              <span class="input-group-text">%</span>
+            </div>
+            <div class="form-text">System threshold is configured in System Settings (default 80%).</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Select Camera Feed</label>
+            <select class="form-select" name="camera_id">
+              <option value="">-- Virtual / Test Stream --</option>
+              {% for c in cameras %}
+              <option value="{{ c.id }}">{{ c.camera_name }} ({{ c.camera_id }})</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label small fw-semibold">Optional RFID Tag UID Cross-Check</label>
+            <input type="text" class="form-control font-monospace text-uppercase" name="rfid_uid" placeholder="e.g. A37F291C">
+            <div class="form-text">If provided, the system compares the OCR plate against the RFID tag's assigned vehicle.</div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold shadow-sm">
+            <i class="fa-solid fa-bolt me-1"></i>Run ANPR Verification Test
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Simulation Outcome Panel -->
+  <div class="col-lg-7">
+    {% if result %}
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0 text-dark">ANPR Verification Outcome</h6>
+      </div>
+      <div class="card-body p-4 text-center">
+        {% if result.status == 'MATCH' %}
+        <div class="alert alert-success p-4 rounded-4 shadow-sm mb-3">
+          <i class="fa-solid fa-circle-check fs-1 text-success mb-2"></i>
+          <h4 class="fw-bold">LICENSE PLATE VERIFIED</h4>
+          <div class="font-monospace fs-3 fw-bold my-2">{{ result.captured_plate }}</div>
+          <p class="mb-0">{{ result.message }}</p>
+        </div>
+        {% elif result.status == 'MISMATCH' %}
+        <div class="alert alert-danger p-4 rounded-4 shadow-sm mb-3">
+          <i class="fa-solid fa-triangle-exclamation fs-1 text-danger mb-2"></i>
+          <h4 class="fw-bold">PLATE MISMATCH DETECTED</h4>
+          <div class="font-monospace fs-3 fw-bold my-2">{{ result.captured_plate }}</div>
+          <p class="mb-0">{{ result.message }}</p>
+        </div>
+        {% else %}
+        <div class="alert alert-warning p-4 rounded-4 shadow-sm mb-3">
+          <i class="fa-solid fa-circle-exclamation fs-1 text-warning mb-2"></i>
+          <h4 class="fw-bold">LOW CONFIDENCE SCAN</h4>
+          <div class="font-monospace fs-3 fw-bold my-2">{{ result.captured_plate }} ({{ result.confidence }}%)</div>
+          <p class="mb-0">{{ result.message }}</p>
+        </div>
+        {% endif %}
+
+        {% if result.matched_vehicle %}
+        <div class="card bg-light border text-start mt-3">
+          <div class="card-body">
+            <h6 class="fw-bold text-primary mb-2">Database Matched Vehicle:</h6>
+            <div class="row g-2 small">
+              <div class="col-6">Plate: <strong>{{ result.matched_vehicle.registration_number }}</strong></div>
+              <div class="col-6">Type: <strong>{{ result.matched_vehicle.vehicle_type }}</strong></div>
+              <div class="col-6">Status: <strong>{{ result.matched_vehicle.auth_status }}</strong></div>
+              <div class="col-6">Driver: <strong>{{ result.matched_vehicle.driver_name or 'N/A' }}</strong></div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Recent ANPR Events -->
+    <div class="card border-0 shadow-sm rounded-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0 text-dark">Recent OCR Events</h6>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small text-secondary">
+            <tr>
+              <th>Time</th>
+              <th>Plate</th>
+              <th>Confidence</th>
+              <th>Verification</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in recent_events %}
+            <tr>
+              <td class="small font-monospace">{{ e.timestamp.strftime('%H:%M:%S') }}</td>
+              <td class="font-monospace fw-bold">{{ e.captured_plate }}</td>
+              <td class="small">{{ e.confidence|round(1) }}%</td>
+              <td>
+                {% if e.verification_status == 'MATCH' %}<span class="badge bg-success">MATCH</span>
+                {% elif e.verification_status == 'MISMATCH' %}<span class="badge bg-danger">MISMATCH</span>
+                {% elif e.verification_status == 'LOW_CONFIDENCE' %}<span class="badge bg-warning text-dark">LOW CONF</span>
+                {% else %}<span class="badge bg-secondary">{{ e.verification_status }}</span>{% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="text-center py-3 text-muted">No test events recorded.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}System Settings - {{ system_name }}{% endblock %}
+{% block page_title %}System Configuration & Settings{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <!-- General Settings Form -->
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm rounded-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-sliders me-2 text-primary"></i>Operational Parameters</h6>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST" action="{{ url_for('settings.system_settings') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Application Display Name</label>
+            <input type="text" class="form-control" name="system_name" value="{{ settings.get('system_name', 'Smart Vehicle Gate System') }}" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Default Gate Direction Mode *</label>
+            <select class="form-select" name="gate_direction_mode" required>
+              <option value="MANUAL_DIRECTION" {% if settings.get('gate_direction_mode') == 'MANUAL_DIRECTION' %}selected{% endif %}>MANUAL_DIRECTION (Operator selects / Device default)</option>
+              <option value="ENTRY_ONLY" {% if settings.get('gate_direction_mode') == 'ENTRY_ONLY' %}selected{% endif %}>ENTRY_ONLY (Enforce all scans as Entry)</option>
+              <option value="EXIT_ONLY" {% if settings.get('gate_direction_mode') == 'EXIT_ONLY' %}selected{% endif %}>EXIT_ONLY (Enforce all scans as Exit)</option>
+              <option value="FUTURE_SEPARATE_ENTRY_EXIT_READERS" {% if settings.get('gate_direction_mode') == 'FUTURE_SEPARATE_ENTRY_EXIT_READERS' %}selected{% endif %}>FUTURE_SEPARATE_ENTRY_EXIT_READERS (Device specific direction)</option>
+            </select>
+            <div class="form-text">Single physical reader setups should use MANUAL_DIRECTION or ENTRY_ONLY / EXIT_ONLY.</div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Scan Cooldown (Seconds)</label>
+              <input type="number" class="form-control" name="scan_cooldown_seconds" value="{{ settings.get('scan_cooldown_seconds', '3') }}" min="1" max="60" required>
+              <div class="form-text">Minimum delay between scans of same RFID card.</div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Device Heartbeat Timeout (Seconds)</label>
+              <input type="number" class="form-control" name="device_heartbeat_timeout" value="{{ settings.get('device_heartbeat_timeout', '35') }}" min="5" max="300" required>
+              <div class="form-text">Seconds without ping before device marked OFFLINE.</div>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Barrier Auto-Close Delay (Seconds)</label>
+              <input type="number" class="form-control" name="barrier_auto_close_delay" value="{{ settings.get('barrier_auto_close_delay', '4') }}" min="1" max="30" required>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">ANPR OCR Confidence Threshold (%)</label>
+              <input type="number" step="0.5" class="form-control" name="anpr_confidence_threshold" value="{{ settings.get('anpr_confidence_threshold', '80.0') }}" min="10" max="100" required>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label small fw-semibold">Dashboard Auto-Refresh Interval (Seconds)</label>
+            <input type="number" class="form-control" name="dashboard_refresh_interval" value="{{ settings.get('dashboard_refresh_interval', '5') }}" min="2" max="60" required>
+          </div>
+
+          <button type="submit" class="btn btn-primary px-4 shadow-sm">
+            <i class="fa-solid fa-floppy-disk me-1"></i>Save System Settings
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Demo & Diagnostic Tools -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-flask me-2 text-warning"></i>Demo & Sample Data Manager</h6>
+      </div>
+      <div class="card-body p-4">
+        <p class="small text-muted">Populate or clean simulated vehicles, RFID tags, and gate movements for offline demonstration and testing.</p>
+
+        <div class="d-grid gap-2">
+          <form method="POST" action="{{ url_for('settings.seed_demo_data') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <button type="submit" class="btn btn-outline-warning w-100 fw-semibold">
+              <i class="fa-solid fa-seedling me-1"></i>Seed Demo Dataset
+            </button>
+          </form>
+
+          <form method="POST" action="{{ url_for('settings.clear_demo_data') }}" onsubmit="return confirm('Clear only demo-flagged records from the database?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <button type="submit" class="btn btn-outline-danger w-100 fw-semibold">
+              <i class="fa-solid fa-trash-can me-1"></i>Clear Demo Records
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Server Info -->
+    <div class="card border-0 shadow-sm rounded-4">
+      <div class="card-header bg-white border-bottom py-3">
+        <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-circle-nodes me-2 text-primary"></i>Server Endpoint Info</h6>
+      </div>
+      <div class="card-body p-4 small">
+        <div class="mb-2 text-muted">Local PC URL:</div>
+        <div class="font-monospace fw-bold bg-light p-2 rounded mb-3">http://127.0.0.1:5000</div>
+        <div class="mb-2 text-muted">ESP32 Scan Endpoint:</div>
+        <div class="font-monospace fw-bold bg-light p-2 rounded text-primary">POST /api/rfid/scan</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

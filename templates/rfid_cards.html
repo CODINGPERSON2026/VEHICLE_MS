@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}RFID Card Management - {{ system_name }}{% endblock %}
+{% block page_title %}RFID Card & Tag Management{% endblock %}
+
+{% block content %}
+<!-- Search & Actions -->
+<div class="card border-0 shadow-sm rounded-3 mb-4">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+      <form method="GET" action="{{ url_for('rfid.list_cards') }}" class="d-flex gap-2 flex-grow-1" style="max-width: 600px;">
+        <div class="input-group">
+          <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+          <input type="text" class="form-control" name="search" value="{{ search }}" placeholder="Search RFID UID, Vehicle Plate, Driver...">
+        </div>
+        <select class="form-select" name="status" style="max-width: 180px;">
+          <option value="">All Statuses</option>
+          {% for s in statuses %}
+          <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-secondary"><i class="fa-solid fa-filter me-1"></i>Filter</button>
+      </form>
+
+      {% if current_user.role != Role.REPORT_VIEWER %}
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#enrollCardModal">
+          <i class="fa-solid fa-satellite-dish me-1"></i>Live Hardware Enrollment
+        </button>
+        <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#manualAssignCardModal">
+          <i class="fa-solid fa-plus me-1"></i>Assign RFID Card
+        </button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- RFID Cards Table -->
+<div class="card border-0 shadow-sm rounded-3">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th>RFID UID</th>
+          <th>Assigned Vehicle</th>
+          <th>Vehicle Type</th>
+          <th>Driver / Custodian</th>
+          <th>Card Status</th>
+          <th>Assigned Date</th>
+          <th>Card Expiry</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cards %}
+        <tr>
+          <td>
+            <span class="font-monospace fw-bold fs-6 text-primary">{{ c.uid }}</span>
+            {% if c.is_demo %}
+            <span class="badge bg-warning-subtle text-dark border border-warning ms-1" style="font-size: 0.6rem;">DEMO</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if c.vehicle %}
+            <a href="{{ url_for('vehicles.view_vehicle', vehicle_id=c.vehicle.id) }}" class="font-monospace fw-bold text-dark text-decoration-none">
+              {{ c.vehicle.registration_number }}
+            </a>
+            {% else %}
+            <span class="text-muted fst-italic">Unassigned</span>
+            {% endif %}
+          </td>
+          <td>{{ c.vehicle.vehicle_type if c.vehicle else '-' }}</td>
+          <td>{{ c.vehicle.driver_name if c.vehicle and c.vehicle.driver_name else '-' }}</td>
+          <td>
+            {% if c.card_status == 'ACTIVE' %}
+            <span class="badge bg-success">ACTIVE</span>
+            {% elif c.card_status == 'BLOCKED' %}
+            <span class="badge bg-danger">BLOCKED</span>
+            {% elif c.card_status == 'LOST' %}
+            <span class="badge bg-dark">LOST</span>
+            {% elif c.card_status == 'INACTIVE' %}
+            <span class="badge bg-secondary">INACTIVE</span>
+            {% else %}
+            <span class="badge bg-warning text-dark">{{ c.card_status }}</span>
+            {% endif %}
+          </td>
+          <td class="small">{{ c.assigned_date.strftime('%Y-%m-%d') if c.assigned_date else '-' }}</td>
+          <td class="small text-muted">{{ c.expiry_date.strftime('%Y-%m-%d') if c.expiry_date else 'Permanent' }}</td>
+          <td class="text-end">
+            {% if current_user.role != Role.REPORT_VIEWER %}
+            <div class="btn-group btn-group-sm">
+              <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#statusModal{{ c.id }}" title="Change Card Status">
+                <i class="fa-solid fa-shield-halved"></i>
+              </button>
+              {% if c.vehicle %}
+              <form method="POST" action="{{ url_for('rfid.unassign_card', card_id=c.id) }}" class="d-inline" onsubmit="return confirm('Unassign RFID Card {{ c.uid }} from vehicle {{ c.vehicle.registration_number }}?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit" class="btn btn-outline-warning" title="Unassign from Vehicle">
+                  <i class="fa-solid fa-link-slash"></i>
+                </button>
+              </form>
+              {% endif %}
+              {% if current_user.is_admin %}
+              <form method="POST" action="{{ url_for('rfid.delete_card', card_id=c.id) }}" class="d-inline" onsubmit="return confirm('Permanently delete RFID Card {{ c.uid }}?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit" class="btn btn-outline-danger" title="Delete Card Record">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+            {% endif %}
+          </td>
+        </tr>
+
+        <!-- Status Change Modal for this card -->
+        <div class="modal fade" id="statusModal{{ c.id }}" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content rounded-4 border-0">
+              <div class="modal-header">
+                <h6 class="modal-title fw-bold">Update Card Status - {{ c.uid }}</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <form method="POST" action="{{ url_for('rfid.update_card_status', card_id=c.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <div class="modal-body">
+                  <div class="mb-3">
+                    <label class="form-label small fw-semibold">Card Status</label>
+                    <select class="form-select" name="status" required>
+                      {% for s in statuses %}
+                      <option value="{{ s }}" {% if c.card_status == s %}selected{% endif %}>{{ s }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label small fw-semibold">Remarks / Reason</label>
+                    <input type="text" class="form-control" name="remarks" value="{{ c.remarks or '' }}" placeholder="Reason for status change...">
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" class="btn btn-primary">Update Status</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <tr>
+          <td colspan="8" class="text-center py-5 text-muted">
+            <i class="fa-solid fa-id-card fs-1 d-block mb-2 text-secondary"></i>
+            No RFID card records found.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal 1: Live Hardware Card Enrollment Modal -->
+<div class="modal fade" id="enrollCardModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content rounded-4 border-0">
+      <div class="modal-header bg-light">
+        <div>
+          <h6 class="modal-title fw-bold mb-0"><i class="fa-solid fa-satellite-dish text-primary me-2"></i>Live RFID Card Enrollment Mode</h6>
+          <small class="text-muted">Tap an unregistered RFID card on the ESP32 reader to capture its UID automatically</small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body p-4">
+        <!-- Live Reader Pulse Status Box -->
+        <div class="p-3 bg-light rounded-3 text-center mb-4 border border-dashed">
+          <div class="mb-2">
+            <span class="pulse-dot pulse-green"></span>
+            <span class="fw-semibold" id="enroll-listener-status">Listening for card scan on ESP32 reader...</span>
+          </div>
+          <small class="text-muted">Ensure ESP32 is powered on and connected to the local Wi-Fi.</small>
+        </div>
+
+        <form method="POST" action="{{ url_for('rfid.assign_card') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Scanned RFID UID *</label>
+              <input type="text" class="form-control font-monospace text-uppercase fw-bold text-primary fs-5" id="assign-uid-input" name="uid" placeholder="Tap Card On Reader..." required>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Assign to Vehicle *</label>
+              <select class="form-select" name="vehicle_id" required>
+                <option value="">-- Select Registered Vehicle --</option>
+                {% for v in vehicles %}
+                <option value="{{ v.id }}">{{ v.registration_number }} ({{ v.vehicle_type }} - {{ v.driver_name or 'No Driver' }})</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Card Expiry Date (Optional)</label>
+              <input type="date" class="form-control" name="expiry_date">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">Remarks</label>
+              <input type="text" class="form-control" name="remarks" placeholder="Optional notes (e.g. Primary Tag)">
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-end gap-2 mt-4">
+            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary px-4 shadow-sm"><i class="fa-solid fa-check me-1"></i>Save & Assign Card</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal 2: Manual Card Assignment Modal -->
+<div class="modal fade" id="manualAssignCardModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content rounded-4 border-0">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">Manual RFID Card Assignment</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('rfid.assign_card') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">RFID UID *</label>
+            <input type="text" class="form-control font-monospace text-uppercase" name="uid" placeholder="e.g. A37F291C" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Assign to Vehicle *</label>
+            <select class="form-select" name="vehicle_id" required>
+              <option value="">-- Select Registered Vehicle --</option>
+              {% for v in vehicles %}
+              <option value="{{ v.id }}">{{ v.registration_number }} ({{ v.vehicle_type }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Card Expiry Date (Optional)</label>
+            <input type="date" class="form-control" name="expiry_date">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Remarks</label>
+            <input type="text" class="form-control" name="remarks" placeholder="Optional notes...">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check me-1"></i>Assign Card</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

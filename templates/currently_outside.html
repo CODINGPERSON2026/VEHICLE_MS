@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Vehicles on Trip (Outside) - {{ system_name }}{% endblock %}
+{% block page_title %}Vehicles Currently Outside Premises (On Trip){% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm rounded-3 mb-4">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+      <form method="GET" action="{{ url_for('movements.currently_outside') }}" class="d-flex gap-2 flex-grow-1" style="max-width: 500px;">
+        <div class="input-group">
+          <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+          <input type="text" class="form-control" name="search" value="{{ search }}" placeholder="Search Plate, Driver, Mobile...">
+        </div>
+        <button type="submit" class="btn btn-secondary">Search</button>
+      </form>
+
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-warning text-dark fs-6 px-3 py-2 rounded-pill shadow-sm">
+          <i class="fa-solid fa-truck-moving me-1"></i> Total Outside / On Trip: {{ movements|length }}
+        </span>
+        <a href="{{ url_for('movements.currently_inside') }}" class="btn btn-outline-primary btn-sm">
+          <i class="fa-solid fa-warehouse me-1"></i>View Inside Depot
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Outside Vehicles Table -->
+<div class="card border-0 shadow-sm rounded-4">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th>Vehicle Number</th>
+          <th>Type</th>
+          <th>Active Trip Driver</th>
+          <th>RFID Tag UID</th>
+          <th>Departure Timestamp</th>
+          <th>Trip Duration</th>
+          <th>Exit Gate</th>
+          <th>Status</th>
+          <th class="text-end">Return Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in movements %}
+        <tr>
+          <td>
+            <a href="{{ url_for('vehicles.view_vehicle', vehicle_id=m.vehicle.id) }}" class="font-monospace fw-bold fs-6 text-dark text-decoration-none">
+              {{ m.vehicle.registration_number }}
+            </a>
+            {% if m.is_manual %}<span class="badge bg-secondary ms-1" style="font-size: 0.6rem;">MANUAL OUT</span>{% endif %}
+          </td>
+          <td><span class="badge bg-light text-dark border">{{ m.vehicle.vehicle_type }}</span></td>
+          <td>
+            <div class="small fw-bold text-primary">
+              <i class="fa-solid fa-user-check me-1 text-success"></i>{{ m.driver_name or (m.vehicle.driver_name if m.vehicle else 'Unassigned') }}
+            </div>
+            {% if m.driver_name and m.vehicle and m.vehicle.driver_name and m.driver_name != m.vehicle.driver_name %}
+            <small class="text-muted d-block" style="font-size: 0.7rem;">Owner: {{ m.vehicle.driver_name }}</small>
+            {% endif %}
+            <div class="text-muted" style="font-size: 0.75rem;">{{ m.vehicle.mobile_number or '-' }}</div>
+          </td>
+          <td class="font-monospace small text-primary">{{ m.rfid_card.uid if m.rfid_card else '-' }}</td>
+          <td class="small font-monospace">{{ m.exit_time.strftime('%Y-%m-%d %H:%M:%S') if m.exit_time else m.entry_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td class="fw-bold text-warning small">
+            <i class="fa-regular fa-clock me-1"></i>{{ m.formatted_duration }}
+          </td>
+          <td class="small text-muted">{{ m.exit_device.device_name if m.exit_device else 'Main Gate' }}</td>
+          <td>
+            <span class="badge bg-warning text-dark"><i class="fa-solid fa-road me-1"></i>ON TRIP (OUTSIDE)</span>
+          </td>
+          <td class="text-end">
+            {% if current_user.role != Role.REPORT_VIEWER %}
+            <!-- Quick Inbound Check-In Return Form -->
+            <form method="POST" action="{{ url_for('movements.quick_return_vehicle', vehicle_id=m.vehicle.id) }}" class="d-inline" onsubmit="return confirm('Confirm vehicle arrival & check-in back into depot: {{ m.vehicle.registration_number }}?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+              <button type="submit" class="btn btn-sm btn-success fw-semibold shadow-sm">
+                <i class="fa-solid fa-house-chimney-crack me-1"></i>Mark Returned (IN)
+              </button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" class="text-center py-5 text-muted">
+            <i class="fa-solid fa-circle-check fs-1 d-block mb-2 text-success"></i>
+            All fleet vehicles are currently stationed inside the depot. No vehicles are out on trip.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

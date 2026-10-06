@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Camera Configuration - {{ system_name }}{% endblock %}
+{% block page_title %}ANPR & IP Camera Configuration{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="text-muted small">Configure RTSP streams, camera gate roles, and ANPR recognition feeds.</div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('devices.anpr_test') }}" class="btn btn-outline-primary btn-sm">
+      <i class="fa-solid fa-camera me-1"></i>Launch ANPR Test Mode
+    </a>
+    {% if current_user.is_admin %}
+    <button class="btn btn-primary btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#newCameraModal">
+      <i class="fa-solid fa-plus me-1"></i>Add IP Camera
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Cameras Table -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+  <div class="card-header bg-white border-bottom py-3">
+    <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-video me-2 text-primary"></i>Configured Cameras</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th>Camera ID</th>
+          <th>Camera Name</th>
+          <th>Role</th>
+          <th>RTSP URL</th>
+          <th>Resolution</th>
+          <th>Status</th>
+          <th>Last Seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in cameras %}
+        <tr>
+          <td class="font-monospace fw-bold text-dark">{{ c.camera_id }}</td>
+          <td class="fw-semibold">{{ c.camera_name }}</td>
+          <td><span class="badge bg-primary-subtle text-primary border">{{ c.role }}</span></td>
+          <td class="font-monospace small text-muted text-truncate" style="max-width: 250px;">{{ c.rtsp_url or 'Manual / Edge OCR' }}</td>
+          <td class="small">{{ c.resolution }}</td>
+          <td>
+            {% if c.is_enabled %}<span class="badge bg-success">ENABLED</span>
+            {% else %}<span class="badge bg-secondary">DISABLED</span>{% endif %}
+          </td>
+          <td class="small text-muted">{{ c.last_seen.strftime('%Y-%m-%d %H:%M:%S') if c.last_seen else 'Ready' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center py-4 text-muted">No IP cameras configured yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Recent ANPR Events -->
+<div class="card border-0 shadow-sm rounded-4">
+  <div class="card-header bg-white border-bottom py-3">
+    <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-camera-retro me-2 text-primary"></i>Recent License Plate OCR Events</h6>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th>Timestamp</th>
+          <th>Captured Plate</th>
+          <th>OCR Confidence</th>
+          <th>Matched Vehicle</th>
+          <th>RFID Cross-Check</th>
+          <th>Verification Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in recent_anpr %}
+        <tr>
+          <td class="font-monospace small">{{ e.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td class="font-monospace fw-bold fs-6 text-dark">{{ e.captured_plate }}</td>
+          <td class="small fw-semibold">{{ e.confidence|round(1) }}%</td>
+          <td>
+            {% if e.matched_vehicle %}
+            <a href="{{ url_for('vehicles.view_vehicle', vehicle_id=e.matched_vehicle.id) }}" class="font-monospace fw-bold text-decoration-none">
+              {{ e.matched_vehicle.registration_number }}
+            </a>
+            {% else %}
+            <span class="text-danger small">No Match in DB</span>
+            {% endif %}
+          </td>
+          <td class="font-monospace small text-muted">{{ e.rfid_event_id or 'Standalone' }}</td>
+          <td>
+            {% if e.verification_status == 'MATCH' %}<span class="badge bg-success">MATCH</span>
+            {% elif e.verification_status == 'MISMATCH' %}<span class="badge bg-danger">MISMATCH</span>
+            {% elif e.verification_status == 'LOW_CONFIDENCE' %}<span class="badge bg-warning text-dark">LOW CONFIDENCE</span>
+            {% else %}<span class="badge bg-secondary">{{ e.verification_status }}</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center py-4 text-muted">No ANPR events logged yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Add New Camera -->
+<div class="modal fade" id="newCameraModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content rounded-4 border-0">
+      <div class="modal-header">
+        <h6 class="modal-title fw-bold">Configure New IP Camera</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('devices.add_camera') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Camera ID (Unique) *</label>
+            <input type="text" class="form-control font-monospace text-uppercase" name="camera_id" placeholder="e.g. CAM_ENTRY_01" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Camera Name *</label>
+            <input type="text" class="form-control" name="camera_name" placeholder="e.g. Ingress ANPR High-Speed Camera" required>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Gate Role *</label>
+            <select class="form-select" name="role" required>
+              {% for r in roles %}
+              <option value="{{ r }}">{{ r }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">RTSP Stream URL</label>
+            <input type="text" class="form-control font-monospace" name="rtsp_url" placeholder="rtsp://admin:pass@192.168.1.50:554/stream1">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Resolution</label>
+            <input type="text" class="form-control" name="resolution" value="1920x1080">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-check me-1"></i>Save Camera</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

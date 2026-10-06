@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+
+{% block title %}Gate Control Center - {{ system_name }}{% endblock %}
+{% block page_title %}Live Gate Control Center{% endblock %}
+
+{% block content %}
+<div id="gate-decision-container">
+  <!-- Top Live Gate Status Header -->
+  <div class="row g-3 mb-4 align-items-center">
+    <div class="col-md-7">
+      <div class="d-flex align-items-center gap-3">
+        <div class="d-inline-flex align-items-center justify-content-center bg-primary text-white rounded-3 p-3" style="width: 52px; height: 52px;">
+          <i class="fa-solid fa-door-open fs-3"></i>
+        </div>
+        <div>
+          <h4 class="fw-bold mb-0 text-dark">Active Barrier & RFID Reader Station</h4>
+          <span class="text-muted small">
+            Direction Mode: <strong class="text-primary">{{ direction_mode }}</strong> |
+            Auto-close Delay: <strong id="barrier-auto-delay">{{ barrier_delay }}</strong>s
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-5 d-flex justify-content-md-end gap-2 flex-wrap">
+      {% if current_user.role != Role.REPORT_VIEWER %}
+      <button class="btn btn-warning shadow-sm btn-sm" data-bs-toggle="modal" data-bs-target="#manualOverrideModal">
+        <i class="fa-solid fa-hand me-1"></i>Manual Check-In / Override
+      </button>
+      {% endif %}
+      <a href="{{ url_for('movements.currently_outside') }}" class="btn btn-outline-warning btn-sm position-relative text-dark fw-semibold">
+        <i class="fa-solid fa-road me-1 text-warning"></i>Outside (<span id="live-outside-count">{{ outside_count }}</span>)
+      </a>
+      <a href="{{ url_for('movements.currently_inside') }}" class="btn btn-outline-primary btn-sm position-relative">
+        <i class="fa-solid fa-warehouse me-1"></i>Inside (<span id="live-inside-count">{{ inside_count }}</span>)
+      </a>
+    </div>
+  </div>
+
+  <!-- Big Decision & Barrier Visualizer Row -->
+  <div class="row g-4 mb-4">
+    <!-- Large Decision Indicator Panel -->
+    <div class="col-lg-8">
+      <div class="gate-decision-box {% if latest_movement and latest_movement.status == 'INSIDE' %}ALLOWED{% elif latest_movement and latest_movement.status == 'OUTSIDE' %}EXIT{% elif latest_denied %}DENIED{% else %}STANDBY{% endif %}" id="gate-decision-box">
+        <div class="decision-title" id="decision-title">
+          {% if latest_movement and latest_movement.status == 'INSIDE' %}
+          ENTRY ALLOWED
+          {% elif latest_movement and latest_movement.status == 'OUTSIDE' %}
+          EXIT RECORDED
+          {% elif latest_denied %}
+          ACCESS DENIED
+          {% else %}
+          SYSTEM STANDBY
+          {% endif %}
+        </div>
+
+        <div class="decision-plate" id="decision-plate">
+          {% if latest_movement and latest_movement.vehicle %}
+          {{ latest_movement.vehicle.registration_number }}
+          {% elif latest_denied and latest_denied.vehicle_number %}
+          {{ latest_denied.vehicle_number }}
+          {% else %}
+          NO ACTIVE SCAN
+          {% endif %}
+        </div>
+
+        <div class="fs-5 fw-semibold opacity-90 mb-3" id="decision-message">
+          {% if latest_movement and latest_movement.status == 'INSIDE' %}
+          Vehicle Authorized - Gate Entry Permitted
+          {% elif latest_movement and latest_movement.status == 'OUTSIDE' %}
+          Exit Recorded (Duration: {{ latest_movement.formatted_duration }})
+          {% elif latest_denied %}
+          Access Denied: {{ latest_denied.reason }} ({{ latest_denied.remarks or '' }})
+          {% else %}
+          Present RFID Card at ESP32 Reader to Operate Gate
+          {% endif %}
+        </div>
+
+        <!-- Telemetry Pill Indicators -->
+        <div class="row g-2 justify-content-center text-start">
+          <div class="col-6 col-sm-3">
+            <div class="bg-black bg-opacity-25 rounded p-2 text-center">
+              <small class="d-block opacity-75" style="font-size: 0.7rem;">VEHICLE TYPE</small>
+              <strong id="decision-type" class="small">{{ latest_movement.vehicle.vehicle_type if latest_movement and latest_movement.vehicle else '-' }}</strong>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="bg-black bg-opacity-25 rounded p-2 text-center position-relative">
+              <small class="d-block opacity-75" style="font-size: 0.7rem;">TRIP DRIVER</small>
+              <strong id="decision-driver" class="small text-truncate d-block">{{ latest_movement.driver_name or (latest_movement.vehicle.driver_name if latest_movement and latest_movement.vehicle else '-') }}</strong>
+              <button type="button" class="btn btn-xs btn-light text-dark fw-semibold py-0 px-2 mt-1 rounded-pill shadow-sm" id="btn-change-driver" style="font-size: 0.68rem; display: none;" onclick="openQuickDriverModal()">
+                <i class="fa-solid fa-user-pen me-1 text-primary"></i>Select Driver
+              </button>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="bg-black bg-opacity-25 rounded p-2 text-center">
+              <small class="d-block opacity-75" style="font-size: 0.7rem;">RFID UID</small>
+              <strong id="decision-uid" class="font-monospace small">{{ latest_movement.rfid_card.uid if latest_movement and latest_movement.rfid_card else (latest_denied.rfid_uid if latest_denied else '-') }}</strong>
+            </div>
+          </div>
+          <div class="col-6 col-sm-3">
+            <div class="bg-black bg-opacity-25 rounded p-2 text-center">
+              <small class="d-block opacity-75" style="font-size: 0.7rem;">EVENT TIME</small>
+              <strong id="decision-time" class="small">{{ latest_movement.entry_time.strftime('%H:%M:%S') if latest_movement else '-' }}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Barrier Simulation Box -->
+    <div class="col-lg-4">
+      <div class="barrier-visualizer h-100 shadow-sm">
+        <div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="fw-bold mb-0 text-white"><i class="fa-solid fa-road-barrier me-2 text-warning"></i>Barrier Gate Arm</h6>
+            <span class="badge bg-danger d-none" id="barrier-timer-badge">Auto-closing...</span>
+          </div>
+          <div class="small text-muted">Status: <span id="barrier-status-text" class="text-secondary fw-bold">CLOSED</span></div>
+        </div>
+
+        <!-- Barrier Arm & Pillar Graphic -->
+        <div style="position: relative; height: 110px; margin-top: 15px;">
+          <div class="barrier-arm closed" id="barrier-arm"></div>
+          <div class="barrier-pillar"></div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center pt-2 border-top border-secondary">
+          <small class="text-muted">Simulated Physical Actuator</small>
+          <button type="button" class="btn btn-sm btn-outline-light py-0 px-2" style="font-size: 0.75rem;" onclick="triggerBarrierOpen({{ barrier_delay }})">
+            <i class="fa-solid fa-play me-1"></i>Test Open
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick RFID Test Scan / Hardware Simulator Bar -->
+  <div class="card border-0 shadow-sm rounded-4 mb-4 bg-light">
+    <div class="card-body p-3">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div class="d-flex align-items-center gap-2">
+          <div class="bg-primary text-white p-2 rounded-circle text-center" style="width: 38px; height: 38px;">
+            <i class="fa-solid fa-satellite-dish"></i>
+          </div>
+          <div>
+            <div class="fw-bold text-dark small">RFID Card Scanner & Hardware Diagnostics</div>
+            <div class="text-muted" style="font-size: 0.75rem;">Touch RFID Card at ESP32 RC522 reader or trigger quick test scan below</div>
+          </div>
+        </div>
+
+        <!-- Quick Test Buttons & Scan Bar -->
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          {% for v in vehicles %}
+            {% if v.rfid_cards and v.rfid_cards|length > 0 %}
+            <button type="button" class="btn btn-sm btn-outline-primary font-monospace shadow-sm" onclick="triggerTestScan('{{ v.rfid_cards[0].uid }}')">
+              <i class="fa-solid fa-id-card me-1"></i>Test Tag: <strong>{{ v.rfid_cards[0].uid }}</strong> ({{ v.registration_number }})
+            </button>
+            {% endif %}
+          {% endfor %}
+
+          <div class="input-group input-group-sm" style="max-width: 260px;">
+            <input type="text" id="manual-scan-uid" class="form-control font-monospace" placeholder="Enter Tag UID (e.g. 52932A5C)">
+            <button class="btn btn-primary" type="button" onclick="triggerManualTestScan()">
+              <i class="fa-solid fa-bolt me-1"></i>Scan
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connected Gate Hardware Status Cards -->
+  <div class="card border-0 shadow-sm rounded-4 mb-4">
+    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+      <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-microchip me-2 text-primary"></i>Configured Edge Hardware Readers</h6>
+      <span class="badge bg-light text-muted border">Auto-polling live</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light small text-secondary">
+            <tr>
+              <th>Device ID</th>
+              <th>Name</th>
+              <th>Gate Location</th>
+              <th>Direction</th>
+              <th>IP Address</th>
+              <th>Health Status</th>
+              <th>Last Heartbeat</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in devices %}
+            <tr>
+              <td class="font-monospace fw-bold text-dark">{{ d.device_id }}</td>
+              <td>{{ d.device_name }}</td>
+              <td>{{ d.gate }}</td>
+              <td><span class="badge bg-light text-dark border">{{ d.direction }}</span></td>
+              <td class="font-monospace small text-muted">{{ d.ip_address or 'Awaiting initial scan' }}</td>
+              <td>
+                {% if d.is_online() %}
+                <span class="badge bg-success"><span class="pulse-dot pulse-green"></span>ONLINE</span>
+                {% else %}
+                <span class="badge bg-secondary">OFFLINE</span>
+                {% endif %}
+              </td>
+              <td class="small text-muted">{{ d.last_seen.strftime('%Y-%m-%d %H:%M:%S') if d.last_seen else 'Never' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="7" class="text-center py-3 text-muted">No hardware devices configured.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Controlled Manual Gate Override -->
+<div class="modal fade" id="manualOverrideModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content rounded-4 border-0">
+      <div class="modal-header bg-warning text-dark">
+        <h6 class="modal-title fw-bold"><i class="fa-solid fa-hand me-2"></i>Controlled Manual Gate Override</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('movements.manual_movement') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="modal-body">
+          <div class="alert alert-warning py-2 small mb-3">
+            <i class="fa-solid fa-triangle-exclamation me-1"></i> Manual actions are strictly recorded with your operator identity in the system audit trail. Vehicle authorization validity is still enforced.
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Select Vehicle *</label>
+            <select class="form-select" name="vehicle_id" required>
+              <option value="">-- Choose Registered Vehicle --</option>
+              {% for v in vehicles %}
+              <option value="{{ v.id }}">{{ v.registration_number }} ({{ v.vehicle_type }} - {{ v.driver_name or 'No Driver' }}) [{{ v.auth_status }}]</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Movement Direction *</label>
+            <select class="form-select" name="direction" required>
+              <option value="ENTRY">Manual ENTRY (IN)</option>
+              <option value="EXIT">Manual EXIT (OUT)</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Mandatory Reason *</label>
+            <textarea class="form-control" name="reason" rows="2" placeholder="e.g. RFID tag misplaced / hardware failure / VIP escort" required></textarea>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Additional Remarks (Optional)</label>
+            <input type="text" class="form-control" name="remarks" placeholder="Optional comments...">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning fw-semibold"><i class="fa-solid fa-check me-1"></i>Authorize Override</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Real-Time Quick Trip Driver Selector -->
+<div class="modal fade" id="quickDriverModal" tabindex="-1" aria-labelledby="quickDriverModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content rounded-4 border-0 shadow-lg">
+      <div class="modal-header bg-light border-bottom">
+        <div>
+          <h6 class="modal-title fw-bold text-dark mb-0" id="quickDriverModalLabel">
+            <i class="fa-solid fa-id-badge text-primary me-2"></i>Select Active Trip Driver
+          </h6>
+          <small class="text-muted">Vehicle: <strong id="modal-vehicle-plate" class="text-primary font-monospace">-</strong> | Default Owner: <span id="modal-default-driver" class="fw-semibold">-</span></small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body p-4">
+        <!-- Live Search Box for Drivers -->
+        <div class="input-group mb-3">
+          <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+          <input type="text" class="form-control" id="driver-search-input" placeholder="Search from 20+ pool drivers by name, employee ID, role..." onkeyup="filterDriverModalList()">
+        </div>
+
+        <!-- Driver Pool List -->
+        <div style="max-height: 380px; overflow-y: auto;" class="pe-1">
+          <div class="row g-2" id="driver-cards-container">
+            <!-- Option 0: Vehicle Default Owner / Driver -->
+            <div class="col-12 driver-item-card" data-search-text="default owner vehicle driver primary">
+              <div class="card border-success border-2 bg-success bg-opacity-10 p-3 rounded-3 d-flex flex-row justify-content-between align-items-center shadow-sm">
+                <div class="d-flex align-items-center gap-3">
+                  <div class="bg-success text-white rounded-circle p-2 text-center" style="width: 44px; height: 44px;">
+                    <i class="fa-solid fa-user-check fs-5"></i>
+                  </div>
+                  <div>
+                    <div class="fw-bold text-dark fs-6" id="default-driver-card-name">Vehicle Primary / Registered Driver</div>
+                    <small class="text-success fw-semibold"><i class="fa-solid fa-certificate me-1"></i>Vehicle Master Default</small>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-success px-3 py-2 fw-bold shadow-sm" onclick="selectTripDriver(null, document.getElementById('modal-default-driver').textContent)">
+                  <i class="fa-solid fa-circle-check me-1"></i>Confirm & Open Gate
+                </button>
+              </div>
+            </div>
+
+            <!-- Pool Drivers from Database -->
+            {% for drv in drivers %}
+            <div class="col-md-6 driver-item-card" data-search-text="{{ drv.name|lower }} {{ drv.armynumber|lower if drv.armynumber else '' }} {{ drv.designation|lower }} {{ drv.mobile_number or '' }}">
+              <div class="card border-0 shadow-sm bg-light p-2 rounded-3 h-100 d-flex flex-row justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2 text-truncate">
+                  <div class="bg-white border rounded-circle p-2 text-center text-primary" style="width: 40px; height: 40px; min-width: 40px;">
+                    <i class="fa-solid fa-id-badge"></i>
+                  </div>
+                  <div class="text-truncate">
+                    <div class="fw-bold text-dark small text-truncate">{{ drv.name }}</div>
+                    <div class="d-flex gap-1 align-items-center">
+                      {% if drv.armynumber %}
+                      <span class="badge bg-white text-secondary border font-monospace" style="font-size: 0.65rem;">{{ drv.armynumber }}</span>
+                      {% endif %}
+                      <span class="text-muted" style="font-size: 0.7rem;">{{ drv.driver_rank or drv.designation }}</span>
+                    </div>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary fw-semibold ms-2 px-3" style="white-space: nowrap;" onclick="selectTripDriver({{ drv.id }}, '{{ drv.name }}')">
+                  <i class="fa-solid fa-check me-1"></i>Select
+                </button>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer bg-light">
+        <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

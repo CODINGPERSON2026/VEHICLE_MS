@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}Vehicles Inside Depot - {{ system_name }}{% endblock %}
+{% block page_title %}Fleet Vehicles Currently Stationed Inside Depot{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm rounded-3 mb-4">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+      <form method="GET" action="{{ url_for('movements.currently_inside') }}" class="d-flex gap-2 flex-grow-1" style="max-width: 500px;">
+        <div class="input-group">
+          <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+          <input type="text" class="form-control" name="search" value="{{ search }}" placeholder="Search Plate, Driver, Mobile...">
+        </div>
+        <button type="submit" class="btn btn-secondary">Search</button>
+      </form>
+
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge bg-success fs-6 px-3 py-2 rounded-pill shadow-sm">
+          <i class="fa-solid fa-warehouse me-1"></i> Available Inside Depot: {{ vehicles|length }}
+        </span>
+        <a href="{{ url_for('movements.currently_outside') }}" class="btn btn-outline-warning btn-sm text-dark fw-semibold">
+          <i class="fa-solid fa-road me-1 text-warning"></i>View Outside (On Trip)
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Inside Depot Vehicles Table -->
+<div class="card border-0 shadow-sm rounded-4">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light small text-uppercase text-secondary">
+        <tr>
+          <th>Vehicle Number</th>
+          <th>Type</th>
+          <th>Registered Driver / Contact</th>
+          <th>RFID Tag UID</th>
+          <th>Depot Status</th>
+          <th>Authorization</th>
+          <th class="text-end">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in vehicles %}
+        <tr>
+          <td>
+            <a href="{{ url_for('vehicles.view_vehicle', vehicle_id=v.id) }}" class="font-monospace fw-bold fs-6 text-dark text-decoration-none">
+              {{ v.registration_number }}
+            </a>
+          </td>
+          <td><span class="badge bg-light text-dark border">{{ v.vehicle_type }}</span></td>
+          <td>
+            <div class="small fw-semibold text-dark">{{ v.driver_name or 'Master Driver' }}</div>
+            <div class="text-muted" style="font-size: 0.75rem;">{{ v.mobile_number or '-' }}</div>
+          </td>
+          <td class="font-monospace small text-primary">{{ v.primary_rfid_uid }}</td>
+          <td>
+            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+              <i class="fa-solid fa-warehouse me-1"></i>INSIDE DEPOT (Available)
+            </span>
+          </td>
+          <td>
+            {% if v.auth_status == 'AUTHORIZED' %}
+              <span class="badge bg-success"><i class="fa-solid fa-circle-check me-1"></i>AUTHORIZED</span>
+            {% elif v.auth_status == 'BLOCKED' %}
+              <span class="badge bg-danger"><i class="fa-solid fa-ban me-1"></i>BLOCKED</span>
+            {% else %}
+              <span class="badge bg-warning text-dark">{{ v.auth_status }}</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if current_user.role != Role.REPORT_VIEWER %}
+            <!-- Manual Dispatch Trigger -->
+            <button class="btn btn-sm btn-outline-warning text-dark fw-semibold" data-bs-toggle="modal" data-bs-target="#quickExitModal{{ v.id }}">
+              <i class="fa-solid fa-arrow-right-from-bracket me-1 text-warning"></i>Manual Dispatch (OUT)
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+
+        <!-- Manual Dispatch Modal for this vehicle -->
+        <div class="modal fade" id="quickExitModal{{ v.id }}" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content rounded-4 border-0 shadow">
+              <div class="modal-header bg-warning text-dark">
+                <h6 class="modal-title fw-bold"><i class="fa-solid fa-arrow-right-from-bracket me-2"></i>Manual Outbound Dispatch - {{ v.registration_number }}</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <form method="POST" action="{{ url_for('movements.manual_movement') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="vehicle_id" value="{{ v.id }}"/>
+                <input type="hidden" name="direction" value="EXIT"/>
+                <div class="modal-body">
+                  <p class="small text-muted mb-3">Record outbound departure of vehicle <strong>{{ v.registration_number }}</strong> to OUTSIDE (On Trip).</p>
+                  <div class="mb-3">
+                    <label class="form-label small fw-semibold">Dispatch Reason / Operator Remarks *</label>
+                    <input type="text" class="form-control" name="reason" value="Operator manual outbound dispatch" required>
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label small fw-semibold">Optional Note</label>
+                    <input type="text" class="form-control" name="remarks" placeholder="e.g. Route destination, trip note...">
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" class="btn btn-warning text-dark fw-bold"><i class="fa-solid fa-check me-1"></i>Confirm Dispatch (OUT)</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center py-5 text-muted">
+            <i class="fa-solid fa-warehouse fs-1 d-block mb-2 text-secondary"></i>
+            No vehicles currently stationed inside depot (All active vehicles are outside on trip).
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
