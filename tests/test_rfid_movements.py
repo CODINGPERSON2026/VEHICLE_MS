@@ -122,13 +122,17 @@ def test_unknown_and_blocked_rfid_scans(client, test_device, app):
 
     # Unknown RFID
     resp_unknown = client.post('/api/rfid/scan', json={
-        "uid": "UNKNOWN_TAG",
+        "uid": "E200BB99",
         "device_id": "GATE_ENTRY_01",
         "api_key": "test_api_key_123",
         "direction": "ENTRY"
     })
     assert resp_unknown.status_code == 404
     assert resp_unknown.get_json()["reason"] == "UNKNOWN_RFID"
+    latest_enrolled = RFIDService.get_latest_enrollment()
+    assert latest_enrolled is not None
+    assert latest_enrolled["uid"] == "E200BB99"
+    assert latest_enrolled["device_id"] == "GATE_ENTRY_01"
 
     # Blocked Card
     resp_blocked = client.post('/api/rfid/scan', json={

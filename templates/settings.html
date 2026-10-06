@@ -59,7 +59,7 @@
 
           <div class="mb-4">
             <label class="form-label small fw-semibold">Dashboard Auto-Refresh Interval (Seconds)</label>
-            <input type="number" class="form-control" name="dashboard_refresh_interval" value="{{ settings.get('dashboard_refresh_interval', '5') }}" min="2" max="60" required>
+            <input type="number" class="form-control" name="dashboard_refresh_interval" value="{{ settings.get('dashboard_refresh_interval', '1') }}" min="1" max="60" required>
           </div>
 
           <button type="submit" class="btn btn-primary px-4 shadow-sm">

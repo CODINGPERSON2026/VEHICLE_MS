@@ -81,6 +81,13 @@ class MovementService:
 
         card = RFIDCard.query.filter_by(uid=norm_uid).first()
         if not card:
+            # Buffer unregistered UID so Live Enrollment Mode catches it immediately
+            try:
+                from services.rfid_service import RFIDService
+                RFIDService.capture_enrollment_scan(norm_uid, device.device_id if device else device_id)
+            except Exception:
+                pass
+
             MovementService._log_denied(
                 uid=norm_uid,
                 device_id=device.id,

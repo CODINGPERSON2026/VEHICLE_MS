@@ -11,7 +11,44 @@ document.addEventListener('DOMContentLoaded', () => {
   initGateControlLivePolling();
   initRFIDEnrollmentListener();
   initDriverModalListeners();
+  initDirectionSwitcher();
 });
+
+function initDirectionSwitcher() {
+  const form = document.getElementById('gate-direction-form');
+  const btnEntry = document.getElementById('btn-nav-dir-entry');
+  const btnExit = document.getElementById('btn-nav-dir-exit');
+  if (!form || !btnEntry || !btnExit) return;
+
+  const handleDirSwitch = async (e, dirVal) => {
+    e.preventDefault();
+    try {
+      const formData = new FormData(form);
+      formData.set('direction', dirVal);
+      await fetch(form.action, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (dirVal === 'ENTRY') {
+        btnEntry.className = 'btn btn-success fw-bold text-white';
+        btnExit.className = 'btn btn-outline-secondary';
+      } else {
+        btnExit.className = 'btn btn-info fw-bold text-white';
+        btnEntry.className = 'btn btn-outline-secondary';
+      }
+
+      const dirText = document.querySelector('#gate-decision-container strong.text-primary');
+      if (dirText) dirText.textContent = dirVal === 'ENTRY' ? 'ENTRY_ONLY' : 'EXIT_ONLY';
+    } catch (err) {
+      console.error('Failed to set direction asynchronously:', err);
+      form.submit();
+    }
+  };
+
+  btnEntry.addEventListener('click', (e) => handleDirSwitch(e, 'ENTRY'));
+  btnExit.addEventListener('click', (e) => handleDirSwitch(e, 'EXIT'));
+}
 
 // ---------------- Sidebar Toggle ---------------- //
 function initSidebarToggle() {
@@ -80,6 +117,7 @@ let currentMovementId = null;
 let isSelectingDriver = false;
 let decisionResetTimer = null;
 let barrierTimer = null;
+let isFirstPoll = true;
 
 function initGateControlLivePolling() {
   const gateBox = document.getElementById('gate-decision-container');
@@ -105,16 +143,23 @@ async function pollGateFeed() {
     }
 
     if (!data.last_event) {
-      // No active scan in feed: only reset if not actively selecting driver
       if (!isSelectingDriver && lastKnownEventKey !== null && lastKnownEventKey !== 'STANDBY') {
         lastKnownEventKey = 'STANDBY';
         resetGateDecisionToStandby();
       }
+      isFirstPoll = false;
       return;
     }
 
     const evt = data.last_event;
     const eventKey = `${evt.movement_id || evt.time}-${evt.vehicle_number}-${evt.decision}`;
+
+    // On initial page load or after mode switch: record current state without triggering false popups
+    if (isFirstPoll) {
+      isFirstPoll = false;
+      lastKnownEventKey = eventKey;
+      return;
+    }
 
     if (lastKnownEventKey !== eventKey) {
       lastKnownEventKey = eventKey;
@@ -187,22 +232,15 @@ function handleIncomingGateScan(evt) {
   if (timeElem) timeElem.textContent = evt.time || '';
 
   if (evt.decision === 'ENTRY_ALLOWED' || evt.decision === 'EXIT_RECORDED') {
-    // 1. Enter Awaiting Driver Selection State
-    isSelectingDriver = true;
-    decisionBox.className = 'gate-decision-box PENDING';
-    if (titleElem) titleElem.innerHTML = '<i class="fa-solid fa-id-card me-2"></i>CARD DETECTED - SELECT DRIVER';
-    if (msgElem) msgElem.innerHTML = '<span class="text-warning fw-bold"><i class="fa-solid fa-circle-exclamation me-1"></i>RFID Verified!</span> Select driver from popup to open gate barrier.';
-    if (driverElem) driverElem.innerHTML = '<span class="badge bg-warning text-dark px-2 py-1"><i class="fa-solid fa-user-clock me-1"></i>Awaiting Selection...</span>';
-    if (changeDrvBtn) {
-      changeDrvBtn.style.display = 'inline-block';
-      changeDrvBtn.innerHTML = '<i class="fa-solid fa-user-pen me-1"></i>Select Driver & Open Gate';
-    }
+    isSelectingDriver = false;
+    closeDriverModal();
 
-    // 2. Setup Modal Data
+    const defName = evt.driver_name || evt.owner_driver || 'Registered Driver';
+
+    // Pre-fill modal data in case operator voluntarily clicks "Select Driver"
     const modalPlate = document.getElementById('modal-vehicle-plate');
     const modalDefaultDrv = document.getElementById('modal-default-driver');
     const defaultDrvCard = document.getElementById('default-driver-card-name');
-    const defName = evt.owner_driver || evt.driver_name || 'Vehicle Master Driver';
     if (modalPlate) modalPlate.textContent = evt.vehicle_number || '-';
     if (modalDefaultDrv) modalDefaultDrv.textContent = defName;
     if (defaultDrvCard) defaultDrvCard.textContent = defName;
@@ -213,12 +251,13 @@ function handleIncomingGateScan(evt) {
       filterDriverModalList();
     }
 
-    // 3. Auto-open Driver Modal & Play Attention Tone
-    openQuickDriverModal();
-    playAttentionSound();
+    if (changeDrvBtn) {
+      changeDrvBtn.style.display = 'inline-block';
+      changeDrvBtn.innerHTML = '<i class="fa-solid fa-user-pen me-1"></i>Select Driver';
+    }
 
-    // Barrier stays CLOSED until driver is selected!
-    // NO reset timer started while modal is active.
+    // Automatically grant access and operate gate without interrupting operator with a modal
+    finalizeAccessGrant(defName);
 
   } else {
     // Denied / Exception Attempt
@@ -443,24 +482,36 @@ function initRFIDEnrollmentListener() {
   const enrollModal = document.getElementById('enrollCardModal');
   if (!enrollModal) return;
 
+  const pollEnrollment = async () => {
+    try {
+      const res = await fetch('/api/rfid/latest_enrollment');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.active && data.data && data.data.uid) {
+        const uidInput = document.getElementById('assign-uid-input');
+        const statusText = document.getElementById('enroll-listener-status');
+        if (uidInput && uidInput.value !== data.data.uid) {
+          uidInput.value = data.data.uid;
+          uidInput.classList.add('is-valid');
+          setTimeout(() => uidInput.classList.remove('is-valid'), 2500);
+        }
+        if (statusText) {
+          statusText.innerHTML = `<span class="text-success fw-bold"><i class="fa-solid fa-circle-check me-1"></i>Tag Captured: ${data.data.uid}</span> <span class="badge bg-secondary-subtle text-secondary ms-1">${data.data.device_id || 'ESP32'}</span>`;
+        }
+      }
+    } catch (err) {}
+  };
+
   enrollModal.addEventListener('shown.bs.modal', () => {
     const statusText = document.getElementById('enroll-listener-status');
-    if (statusText) statusText.textContent = 'Waiting for card scan on ESP32 reader...';
+    const uidInput = document.getElementById('assign-uid-input');
+    if (statusText && (!uidInput || !uidInput.value)) {
+      statusText.innerHTML = '<span class="pulse-dot pulse-green me-1"></span>Waiting for card scan on ESP32 reader...';
+    }
 
-    enrollmentInterval = setInterval(async () => {
-      try {
-        const res = await fetch('/api/rfid/latest_enrollment');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.active && data.data && data.data.uid) {
-          const uidInput = document.getElementById('assign-uid-input');
-          if (uidInput) uidInput.value = data.data.uid;
-          if (statusText) {
-            statusText.innerHTML = `<span class="text-success font-weight-bold">Tag Captured: ${data.data.uid}</span> (Device: ${data.data.device_id})`;
-          }
-        }
-      } catch (err) {}
-    }, 1500);
+    // Check immediately, then poll every 1.5s
+    pollEnrollment();
+    enrollmentInterval = setInterval(pollEnrollment, 1500);
   });
 
   enrollModal.addEventListener('hidden.bs.modal', () => {

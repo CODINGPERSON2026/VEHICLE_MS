@@ -28,7 +28,7 @@ class Config:
     BARRIER_CLOSE_DELAY_SECONDS = int(os.environ.get('BARRIER_CLOSE_DELAY_SECONDS', 4))
     
     # Dashboard Auto-refresh interval (seconds)
-    DASHBOARD_REFRESH_INTERVAL = int(os.environ.get('DASHBOARD_REFRESH_INTERVAL', 5))
+    DASHBOARD_REFRESH_INTERVAL = int(os.environ.get('DASHBOARD_REFRESH_INTERVAL', 1))
 
     # WTForms CSRF
     WTF_CSRF_ENABLED = True

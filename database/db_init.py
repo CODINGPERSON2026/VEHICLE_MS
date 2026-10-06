@@ -35,7 +35,7 @@ def seed_default_settings():
         'device_heartbeat_timeout': ('35', 'Seconds before an inactive device is marked OFFLINE'),
         'barrier_auto_close_delay': ('4', 'Seconds to simulate barrier gate open before auto-closing'),
         'anpr_confidence_threshold': ('80.0', 'Minimum confidence score (%) for ANPR auto-match'),
-        'dashboard_refresh_interval': ('5', 'Dashboard auto-refresh interval in seconds'),
+        'dashboard_refresh_interval': ('1', 'Dashboard auto-refresh interval in seconds'),
         'demo_mode_enabled': ('0', 'Whether simulated demo controls and quick actions are shown')
     }
 

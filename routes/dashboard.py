@@ -14,7 +14,7 @@ dashboard_bp = Blueprint('dashboard', __name__)
 @dashboard_bp.route('/')
 @login_required
 def index():
-    refresh_interval = int(SystemSetting.get_value('dashboard_refresh_interval', '5'))
+    refresh_interval = int(SystemSetting.get_value('dashboard_refresh_interval', '1'))
     return render_template('dashboard.html', refresh_interval=refresh_interval)
 
 @dashboard_bp.route('/api/dashboard/stats')

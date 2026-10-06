@@ -137,14 +137,14 @@
 
       <div class="d-flex align-items-center gap-3">
         <!-- Interactive Gate Direction Switcher for Single-Reader Setup -->
-        <form method="POST" action="{{ url_for('movements.set_gate_direction') }}" class="d-inline-flex align-items-center gap-1">
+        <form method="POST" action="{{ url_for('movements.set_gate_direction') }}" id="gate-direction-form" class="d-inline-flex align-items-center gap-1">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
           <span class="small text-muted me-1 d-none d-md-inline fw-semibold"><i class="fa-solid fa-arrows-left-right me-1 text-primary"></i>Direction:</span>
           <div class="btn-group btn-group-sm" role="group">
-            <button type="submit" name="direction" value="ENTRY" class="btn {% if gate_direction_mode == 'ENTRY_ONLY' or gate_direction_mode == 'ENTRY' or gate_direction_mode == 'MANUAL_DIRECTION' %}btn-success fw-bold text-white{% else %}btn-outline-secondary{% endif %}" title="Set reader to ENTRY mode">
+            <button type="submit" name="direction" value="ENTRY" id="btn-nav-dir-entry" class="btn {% if gate_direction_mode == 'ENTRY_ONLY' or gate_direction_mode == 'ENTRY' or gate_direction_mode == 'MANUAL_DIRECTION' %}btn-success fw-bold text-white{% else %}btn-outline-secondary{% endif %}" title="Set reader to ENTRY mode">
               <i class="fa-solid fa-arrow-right-to-bracket me-1"></i>ENTRY (IN)
             </button>
-            <button type="submit" name="direction" value="EXIT" class="btn {% if gate_direction_mode == 'EXIT_ONLY' or gate_direction_mode == 'EXIT' %}btn-info fw-bold text-white{% else %}btn-outline-secondary{% endif %}" title="Set reader to EXIT mode">
+            <button type="submit" name="direction" value="EXIT" id="btn-nav-dir-exit" class="btn {% if gate_direction_mode == 'EXIT_ONLY' or gate_direction_mode == 'EXIT' %}btn-info fw-bold text-white{% else %}btn-outline-secondary{% endif %}" title="Set reader to EXIT mode">
               <i class="fa-solid fa-arrow-right-from-bracket me-1"></i>EXIT (OUT)
             </button>
           </div>

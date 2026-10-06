@@ -195,7 +195,7 @@
               <select class="form-select" name="vehicle_id" required>
                 <option value="">-- Select Registered Vehicle --</option>
                 {% for v in vehicles %}
-                <option value="{{ v.id }}">{{ v.registration_number }} ({{ v.vehicle_type }} - {{ v.driver_name or 'No Driver' }})</option>
+                <option value="{{ v.id }}">{{ v.registration_number }} ({{ v.vehicle_type }})</option>
                 {% endfor %}
               </select>
             </div>
