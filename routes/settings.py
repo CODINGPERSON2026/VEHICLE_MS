@@ -191,7 +191,7 @@ def backups():
 
     backup_files = []
     for f in os.listdir(backup_folder):
-        if f.endswith('.sql') or f.endswith('.db'):
+        if f.endswith('.sql'):
             path = os.path.join(backup_folder, f)
             stat = os.stat(path)
             backup_files.append({
@@ -393,154 +393,6 @@ def restore_backup(filename):
     return redirect(url_for('settings.backups'))
 
 
-# ----------------- DEMO MODE DATA SEEDING ----------------- #
-
-@settings_bp.route('/demo/seed', methods=['POST'])
-@login_required
-def seed_demo_data():
-    """Seed comprehensive demo dataset with vehicles, RFID tags, and movements."""
-    if current_user.role != Role.ADMIN:
-        flash('Only Administrators can seed demo data.', 'danger')
-        return redirect(url_for('dashboard.index'))
-
-    # Ensure a default ESP32 device exists
-    default_dev = Device.query.filter_by(device_id='GATE_ENTRY_01').first()
-    if not default_dev:
-        default_dev = Device(
-            device_id='GATE_ENTRY_01',
-            device_name='Main Gate ESP32 Reader',
-            device_type=DeviceType.ESP32_RFID,
-            gate='Main Gate',
-            direction=DeviceDirection.ENTRY,
-            status=DeviceStatus.ONLINE,
-            last_seen=datetime.utcnow(),
-            is_active=True
-        )
-        default_dev.set_api_key('demo_secret_key_123')
-        db.session.add(default_dev)
-        db.session.commit()
-
-    # Sample demo vehicles
-    demo_vehicles_data = [
-        {"reg": "MH12AB1234", "type": VehicleType.GYPSY, "driver": "Subedar Rajesh Sharma", "phone": "9876543210", "auth": AuthStatus.AUTHORIZED, "valid_days": 365, "uid": "A37F291C"},
-        {"reg": "DL01XY9876", "type": VehicleType.TWO_POINT_FIVE_TON, "driver": "Havaldar Vikram Singh", "phone": "9811223344", "auth": AuthStatus.AUTHORIZED, "valid_days": 180, "uid": "E5B2104A"},
-        {"reg": "KA04CD5555", "type": VehicleType.ALS, "driver": "Naik Anil Kumar", "phone": "9988776655", "auth": AuthStatus.AUTHORIZED, "valid_days": 90, "uid": "89C4123D"},
-        {"reg": "MH14ZZ7777", "type": VehicleType.TATA_YODHA, "driver": "Subedar Suresh Patel", "phone": "9123456780", "auth": AuthStatus.AUTHORIZED, "valid_days": 730, "uid": "11223344"},
-        {"reg": "UP32FF4321", "type": VehicleType.HMV, "driver": "Havaldar Mohan Lal", "phone": "9765432109", "auth": AuthStatus.EXPIRED, "valid_days": -10, "uid": "DEADBEEF"},
-        {"reg": "HR26BK9999", "type": VehicleType.FORTUNER, "driver": "Subedar Major Ramesh Verma", "phone": "9845123678", "auth": AuthStatus.BLOCKED, "valid_days": 30, "uid": "CAFEBABE"}
-    ]
-
-    for idx, item in enumerate(demo_vehicles_data):
-        veh = Vehicle.query.filter_by(registration_number=item["reg"]).first()
-        if not veh:
-            v_issue = date.today() - timedelta(days=30)
-            veh = Vehicle(
-                registration_number=item["reg"],
-                vehicle_type=item["type"],
-                issue_date=v_issue,
-                custodian_name=item["driver"],
-                armynumber=f"JC-{200000 + idx}",
-                mobile_number=item["phone"],
-                auth_status=item["auth"],
-                is_active=True,
-                is_demo=True
-            )
-            db.session.add(veh)
-            db.session.flush()
-
-            card = RFIDCard.query.filter_by(uid=item["uid"]).first()
-            if not card:
-                card = RFIDCard(
-                    uid=item["uid"],
-                    vehicle_id=veh.id,
-                    card_status=CardStatus.BLOCKED if item["auth"] == AuthStatus.BLOCKED else CardStatus.ACTIVE,
-                    assigned_date=date.today() - timedelta(days=20),
-                    is_demo=True
-                )
-                db.session.add(card)
-
-    db.session.commit()
-
-    # Add sample demo movements
-    v1 = Vehicle.query.filter_by(registration_number="MH12AB1234").first()
-    v2 = Vehicle.query.filter_by(registration_number="DL01XY9876").first()
-    
-    if v1 and not v1.has_active_movement():
-        # Inside movement
-        m1 = VehicleMovement(
-            vehicle_id=v1.id,
-            entry_time=datetime.utcnow() - timedelta(hours=2, minutes=15),
-            entry_device_id=default_dev.id,
-            direction=GateDirection.ENTRY,
-            status=MovementStatus.INSIDE,
-            is_demo=True
-        )
-        db.session.add(m1)
-
-    if v2:
-        # Completed historical movement
-        m2 = VehicleMovement(
-            vehicle_id=v2.id,
-            entry_time=datetime.utcnow() - timedelta(hours=5),
-            exit_time=datetime.utcnow() - timedelta(hours=1),
-            duration_seconds=14400,
-            entry_device_id=default_dev.id,
-            exit_device_id=default_dev.id,
-            direction=GateDirection.EXIT,
-            status=MovementStatus.OUTSIDE,
-            is_demo=True
-        )
-        db.session.add(m2)
-
-    # Sample denied attempt
-    d1 = DeniedAttempt(
-        timestamp=datetime.utcnow() - timedelta(minutes=45),
-        rfid_uid="UNKNOWN999",
-        direction="ENTRY",
-        reason=DeniedReason.UNKNOWN_RFID,
-        device_id=default_dev.id,
-        remarks="Demo unregistered tag scan",
-        is_demo=True
-    )
-    db.session.add(d1)
-
-    db.session.commit()
-    SystemSetting.set_value('demo_mode_enabled', '1')
-
-    log_audit(
-        action=AuditAction.DEMO_MODE_TOGGLE,
-        description="Seeded sample demo vehicles, RFID cards, and movements",
-        user=current_user
-    )
-
-    flash('Demo dataset seeded successfully! Explore dashboard, vehicle master, RFID management, and gate control.', 'success')
-    return redirect(url_for('dashboard.index'))
-
-@settings_bp.route('/demo/clear', methods=['POST'])
-@login_required
-def clear_demo_data():
-    """Clear only demo marked records without touching real system data."""
-    if current_user.role != Role.ADMIN:
-        flash('Permission denied.', 'danger')
-        return redirect(url_for('dashboard.index'))
-
-    VehicleMovement.query.filter_by(is_demo=True).delete()
-    DeniedAttempt.query.filter_by(is_demo=True).delete()
-    RFIDCard.query.filter_by(is_demo=True).delete()
-    Vehicle.query.filter_by(is_demo=True).delete()
-    
-    SystemSetting.set_value('demo_mode_enabled', '0')
-    db.session.commit()
-
-    log_audit(
-        action=AuditAction.DEMO_MODE_TOGGLE,
-        description="Cleared all demo records from system",
-        user=current_user
-    )
-
-    flash('Demo records removed successfully.', 'info')
-    return redirect(url_for('dashboard.index'))
-
 @settings_bp.route('/movements/clear-all-history', methods=['POST'])
 @login_required
 def clear_all_movement_history():
@@ -554,6 +406,7 @@ def clear_all_movement_history():
     DeviceEvent.query.delete()
     for d in Device.query.all():
         d.last_event = None
+    Vehicle.query.update({Vehicle.current_vehicle_location: 'INSIDE'})
     db.session.commit()
 
     log_audit(

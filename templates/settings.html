@@ -82,32 +82,8 @@
     </div>
   </div>
 
-  <!-- Demo & Diagnostic Tools -->
+  <!-- Server Info & Diagnostics -->
   <div class="col-lg-4">
-    <div class="card border-0 shadow-sm rounded-4 mb-4">
-      <div class="card-header bg-white border-bottom py-3">
-        <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-flask me-2 text-warning"></i>Demo & Sample Data Manager</h6>
-      </div>
-      <div class="card-body p-4">
-        <p class="small text-muted">Populate or clean simulated vehicles, RFID tags, and gate movements for offline demonstration and testing.</p>
-
-        <div class="d-grid gap-2">
-          <form method="POST" action="{{ url_for('settings.seed_demo_data') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-            <button type="submit" class="btn btn-outline-warning w-100 fw-semibold">
-              <i class="fa-solid fa-seedling me-1"></i>Seed Demo Dataset
-            </button>
-          </form>
-
-          <form method="POST" action="{{ url_for('settings.clear_demo_data') }}" onsubmit="return confirm('Clear only demo-flagged records from the database?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-            <button type="submit" class="btn btn-outline-danger w-100 fw-semibold">
-              <i class="fa-solid fa-trash-can me-1"></i>Clear Demo Records
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
 
     <!-- Quick Server Info -->
     <div class="card border-0 shadow-sm rounded-4">

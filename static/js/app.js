@@ -711,20 +711,22 @@ function openScanConfirmationModal(scanData) {
   const authBadge = document.getElementById('modal-confirm-auth-badge');
   if (authBadge) {
     const isAuth = scanData.vehicle.auth_status === 'AUTHORIZED';
-    authBadge.className = isAuth ? 'badge bg-success px-3 py-1 fs-6' : 'badge bg-danger px-3 py-1 fs-6';
+    authBadge.className = isAuth 
+      ? 'badge bg-success-subtle text-success border border-success-subtle px-3 py-1 fs-6 fw-semibold' 
+      : 'badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-1 fs-6 fw-semibold';
     authBadge.textContent = scanData.vehicle.auth_status || 'NOT AUTHORIZED';
   }
 
-  // Current Location Status Pill
+  // Current Location Status Pill - Harmonized Clean Style
   const statusPill = document.getElementById('modal-confirm-status-pill');
   if (statusPill) {
     const isOutside = scanData.current_status === 'OUTSIDE';
     if (isOutside) {
-      statusPill.className = 'badge bg-warning text-dark px-3 py-1 fs-6 fw-bold shadow-sm';
-      statusPill.innerHTML = '<i class="fa-solid fa-road me-1"></i>CURRENTLY OUTSIDE (Can only Enter IN)';
+      statusPill.className = 'badge bg-white text-dark border border-secondary-subtle px-3 py-2 fs-6 fw-semibold w-100 text-wrap shadow-none';
+      statusPill.innerHTML = '<i class="fa-solid fa-road me-1 text-primary"></i>CURRENTLY OUTSIDE &bull; Ready for IN';
     } else {
-      statusPill.className = 'badge bg-success text-white px-3 py-1 fs-6 fw-bold shadow-sm';
-      statusPill.innerHTML = '<i class="fa-solid fa-warehouse me-1"></i>CURRENTLY INSIDE (Can only Exit OUT)';
+      statusPill.className = 'badge bg-white text-dark border border-secondary-subtle px-3 py-2 fs-6 fw-semibold w-100 text-wrap shadow-none';
+      statusPill.innerHTML = '<i class="fa-solid fa-warehouse me-1 text-primary"></i>CURRENTLY INSIDE &bull; Ready for OUT';
     }
   }
 
@@ -862,6 +864,7 @@ async function confirmScan(direction) {
       },
       body: JSON.stringify({
         uid: currentPendingScan.uid,
+        vehicle_id: (currentPendingScan.vehicle && currentPendingScan.vehicle.id) || null,
         direction: direction,
         driver_id: selectedDriverId,
         driver_name: selectedDriverName,
@@ -970,9 +973,100 @@ async function cancelPendingScan() {
 }
 
 function closeScanConfirmationModal() {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
   const modalElem = document.getElementById('scanConfirmationModal');
   if (modalElem) {
     const modal = bootstrap.Modal.getInstance(modalElem);
     if (modal) modal.hide();
   }
+}
+
+// ---------------- Hindi Voice Announcer for Vehicle & Driver ---------------- //
+function speakVehicleDetailsHindi() {
+  if (!('speechSynthesis' in window)) {
+    alert('Audio speech (TTS) is not supported in this browser.');
+    return;
+  }
+
+  window.speechSynthesis.cancel();
+
+  if (!currentPendingScan || !currentPendingScan.vehicle) {
+    return;
+  }
+
+  const veh = currentPendingScan.vehicle;
+  const driver = currentPendingScan.driver || {};
+  const plate = (veh.registration_number || '').trim();
+  const vType = veh.vehicle_type || 'वाहन';
+  const isAuth = veh.auth_status === 'AUTHORIZED';
+  const isOutside = currentPendingScan.current_status === 'OUTSIDE';
+
+  // Map digits to Hindi for crystal-clear natural speech
+  const digitMap = {
+    '0': 'शून्य ', '1': 'एक ', '2': 'दो ', '3': 'तीन ', '4': 'चार ',
+    '5': 'पाँच ', '6': 'छह ', '7': 'सात ', '8': 'आठ ', '9': 'नौ '
+  };
+  let spokenPlate = '';
+  for (let ch of plate) {
+    if (digitMap[ch]) {
+      spokenPlate += digitMap[ch];
+    } else {
+      spokenPlate += ch + ' ';
+    }
+  }
+
+  const statusPhrase = isOutside 
+    ? 'डिपो के बाहर है, अंदर एंट्री के लिए तैयार।' 
+    : 'डिपो के अंदर है, बाहर एग्जिट के लिए तैयार।';
+
+  const authPhrase = isAuth ? 'अधिकृत वाहन है।' : 'अनधिकृत वाहन है, कृपया जांच करें।';
+
+  let hindiText = `गाड़ी नंबर ${spokenPlate.trim()}। मॉडल ${vType}। यह ${authPhrase} वर्तमान में ${statusPhrase}`;
+
+  if (driver && driver.name) {
+    hindiText += ` चालक का नाम: ${driver.name}।`;
+  }
+
+  const utterance = new SpeechSynthesisUtterance(hindiText);
+  utterance.lang = 'hi-IN';
+  utterance.rate = 0.90;
+  utterance.pitch = 1.0;
+
+  // Select Hindi voice if available
+  const voices = window.speechSynthesis.getVoices();
+  const hiVoice = voices.find(v => v.lang.includes('hi') || v.lang.includes('Hindi') || (v.name && v.name.toLowerCase().includes('hindi')));
+  if (hiVoice) {
+    utterance.voice = hiVoice;
+  }
+
+  // Visual audio pulse on speaker button
+  const btn = document.getElementById('btn-speak-hindi');
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.classList.remove('btn-outline-primary');
+    btn.classList.add('btn-primary', 'text-white');
+    btn.innerHTML = '<i class="fa-solid fa-volume-high fa-beat me-1"></i><span class="small fw-bold" style="font-size:0.72rem;">बोल रहा है...</span>';
+  }
+
+  const resetBtn = () => {
+    if (btn) {
+      btn.classList.remove('btn-primary', 'text-white');
+      btn.classList.add('btn-outline-primary');
+      btn.innerHTML = originalHtml;
+    }
+  };
+
+  utterance.onend = resetBtn;
+  utterance.onerror = resetBtn;
+
+  window.speechSynthesis.speak(utterance);
+}
+
+// Pre-load voices on browser ready
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    // Voices cached by browser
+  };
 }

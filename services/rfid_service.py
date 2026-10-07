@@ -74,10 +74,31 @@ class RFIDService:
             return {"success": False, "reason": card_err, "message": f"RFID card is {card.card_status}."}
 
         vehicle = card.vehicle
-        if not vehicle or not vehicle.is_active:
-            return {"success": False, "reason": "UNASSIGNED_CARD", "message": "Card is not assigned to an active vehicle."}
-
         from models.driver import Driver
+        from models.movement import VehicleMovement, MovementStatus
+
+        if not vehicle and card.driver:
+            # Check if this driver currently has an active trip outside
+            active_out = VehicleMovement.query.filter_by(
+                driver_id=card.driver.id,
+                status=MovementStatus.OUTSIDE
+            ).order_by(VehicleMovement.exit_time.desc()).first()
+            if active_out and active_out.vehicle:
+                vehicle = active_out.vehicle
+            else:
+                # Look for vehicle associated with driver
+                vehicle = Vehicle.query.filter(
+                    Vehicle.is_active == True,
+                    (Vehicle.armynumber == card.driver.armynumber if card.driver.armynumber else False) |
+                    (Vehicle.driver_name == card.driver.name)
+                ).first()
+                if not vehicle:
+                    # Fallback to any active vehicle
+                    vehicle = Vehicle.query.filter_by(is_active=True).first()
+
+        if not vehicle or not vehicle.is_active:
+            return {"success": False, "reason": "UNASSIGNED_CARD", "message": "Card is not assigned to an active vehicle or driver."}
+
         # Check active movement status
         active_outside = vehicle.get_active_outside_movement()
         is_outside = active_outside is not None
@@ -86,10 +107,12 @@ class RFIDService:
         forbidden_direction = "EXIT" if is_outside else "ENTRY"
         recommended_direction = allowed_direction
 
-        # Determine driver details
-        assigned_driver_name = active_outside.driver_name if active_outside and active_outside.driver_name else (vehicle.driver_name or vehicle.custodian_name or "Registered Driver")
+        # Determine driver details (Custodian is NOT driver)
+        assigned_driver_name = active_outside.driver_name if active_outside and active_outside.driver_name else (
+            card.driver.name if card.driver else "Unassigned Driver"
+        )
         
-        drv_record = Driver.query.filter(
+        drv_record = card.driver or Driver.query.filter(
             (Driver.name == assigned_driver_name) | 
             (Driver.armynumber == vehicle.armynumber if vehicle.armynumber else False)
         ).first()
@@ -191,8 +214,10 @@ class RFIDService:
 
     @staticmethod
     def get_all_cards(search=None, status=None, is_demo=None):
-        """Query RFID cards with search by UID or vehicle."""
-        query = RFIDCard.query.join(Vehicle, RFIDCard.vehicle_id == Vehicle.id, isouter=True)
+        """Query RFID cards with search by UID, vehicle, or driver."""
+        from models.driver import Driver
+        query = RFIDCard.query.join(Vehicle, RFIDCard.vehicle_id == Vehicle.id, isouter=True)\
+                              .join(Driver, RFIDCard.driver_id == Driver.id, isouter=True)
         
         if is_demo is not None:
             query = query.filter(RFIDCard.is_demo == is_demo)
@@ -204,7 +229,9 @@ class RFIDService:
                 (RFIDCard.uid.ilike(f"%{norm_uid}%") if norm_uid else False) |
                 RFIDCard.remarks.ilike(s) |
                 Vehicle.registration_number.ilike(s) |
-                Vehicle.driver_name.ilike(s)
+                Vehicle.custodian_name.ilike(s) |
+                Driver.name.ilike(s) |
+                Driver.armynumber.ilike(s)
             )
             
         if status and status in CardStatus.CHOICES:
@@ -220,15 +247,18 @@ class RFIDService:
         return RFIDCard.query.filter_by(uid=norm_uid).first()
 
     @staticmethod
-    def assign_card(uid: str, vehicle_id: int, expiry_date=None, remarks: str = None, user=None, is_demo=False):
-        """Assign an RFID card to a vehicle."""
+    def assign_card(uid: str, vehicle_id: int = None, driver_id: int = None, expiry_date=None, remarks: str = None, user=None, is_demo=False):
+        """Assign an RFID card to a driver and/or vehicle."""
+        from models.driver import Driver
         norm_uid = normalize_uid(uid)
         if not norm_uid:
             return False, "RFID UID cannot be empty.", None
 
+        if not vehicle_id and not driver_id:
+            return False, "Please select either a Driver or a Vehicle to assign this RFID card.", None
+
         vehicle = db.session.get(Vehicle, vehicle_id) if vehicle_id else None
-        if vehicle_id and not vehicle:
-            return False, "Selected vehicle not found.", None
+        driver = db.session.get(Driver, driver_id) if driver_id else None
 
         # Parse expiry date to datetime.date
         exp = None
@@ -243,45 +273,68 @@ class RFIDService:
         # Check existing card
         card = RFIDCard.query.filter_by(uid=norm_uid).first()
         if card:
-            if card.vehicle_id and card.vehicle_id != vehicle_id and card.card_status == CardStatus.ACTIVE:
-                return False, f"RFID Card '{norm_uid}' is already assigned to active Vehicle '{card.vehicle.registration_number}'. Reassign or deactivate it first.", None
-            # Reassignment / Update
-            old_veh_id = card.vehicle_id
+            # Clear previous driver link if driver is changed
+            if card.driver and card.driver.id != driver_id:
+                card.driver.rfid_uid = None
+
             card.vehicle_id = vehicle_id
+            card.driver_id = driver_id
             card.card_status = CardStatus.ACTIVE
             card.assigned_date = date.today()
             card.expiry_date = exp
             if remarks:
                 card.remarks = remarks.strip()
+            
+            if driver:
+                driver.rfid_uid = norm_uid
+
             db.session.commit()
             
+            target_parts = []
+            if driver:
+                target_parts.append(f"driver '{driver.name}'")
+            if vehicle:
+                target_parts.append(f"vehicle '{vehicle.registration_number}'")
+            target_desc = " and ".join(target_parts)
+
             log_audit(
-                action=AuditAction.RFID_ASSIGN if not old_veh_id else AuditAction.RFID_REASSIGN,
-                description=f"Assigned RFID '{norm_uid}' to vehicle '{vehicle.registration_number if vehicle else 'Unassigned'}'",
+                action=AuditAction.RFID_ASSIGN,
+                description=f"Assigned RFID '{norm_uid}' to {target_desc}",
                 related_vehicle=vehicle.registration_number if vehicle else None,
                 user=user
             )
-            return True, f"Card '{norm_uid}' assigned successfully.", card
+            return True, f"Card '{norm_uid}' assigned to {target_desc} successfully.", card
 
         new_card = RFIDCard(
             uid=norm_uid,
             vehicle_id=vehicle_id,
+            driver_id=driver_id,
             card_status=CardStatus.ACTIVE,
             assigned_date=date.today(),
             expiry_date=exp,
             remarks=remarks.strip() if remarks else None,
             is_demo=is_demo
         )
+        if driver:
+            driver.rfid_uid = norm_uid
+
         db.session.add(new_card)
         db.session.commit()
 
+        target_parts = []
+        if driver:
+            target_parts.append(f"driver '{driver.name}'")
+        if vehicle:
+            target_parts.append(f"vehicle '{vehicle.registration_number}'")
+        target_desc = " and ".join(target_parts)
+
         log_audit(
             action=AuditAction.RFID_ASSIGN,
-            description=f"Registered & assigned RFID '{norm_uid}' to vehicle '{vehicle.registration_number if vehicle else 'Unassigned'}'",
+            description=f"Registered & assigned RFID '{norm_uid}' to {target_desc}",
             related_vehicle=vehicle.registration_number if vehicle else None,
             user=user
         )
-        return True, f"Card '{norm_uid}' registered and assigned successfully.", new_card
+        return True, f"Card '{norm_uid}' registered and assigned to {target_desc} successfully.", new_card
 
     @staticmethod
     def update_card_status(card_id: int, new_status: str, remarks: str = None, user=None):
@@ -310,22 +363,29 @@ class RFIDService:
 
     @staticmethod
     def unassign_card(card_id: int, user=None):
-        """Unassign an RFID card from its vehicle (removes link)."""
+        """Unassign an RFID card from its vehicle and/or driver (removes links)."""
         card = db.session.get(RFIDCard, card_id)
         if not card:
             return False, "Card not found."
             
-        old_vehicle_num = card.vehicle.registration_number if card.vehicle else "None"
+        old_parts = []
+        if card.vehicle:
+            old_parts.append(f"vehicle '{card.vehicle.registration_number}'")
+        if card.driver:
+            old_parts.append(f"driver '{card.driver.name}'")
+            card.driver.rfid_uid = None
+
         card.vehicle_id = None
+        card.driver_id = None
         db.session.commit()
 
+        target_desc = " and ".join(old_parts) or "assigned entity"
         log_audit(
             action=AuditAction.RFID_DEACTIVATE,
-            description=f"Unassigned RFID '{card.uid}' from vehicle '{old_vehicle_num}'",
-            related_vehicle=old_vehicle_num,
+            description=f"Unassigned RFID '{card.uid}' from {target_desc}",
             user=user
         )
-        return True, f"RFID Card '{card.uid}' unassigned from vehicle successfully."
+        return True, f"RFID Card '{card.uid}' unassigned successfully."
 
     @staticmethod
     def delete_card(card_id: int, user=None):

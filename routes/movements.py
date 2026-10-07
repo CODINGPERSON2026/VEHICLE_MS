@@ -35,9 +35,8 @@ def gate_control():
     from models.driver import Driver
     drivers = Driver.query.filter_by(is_active=True).order_by(Driver.name.asc()).all()
     
-    total_vehicles = Vehicle.query.filter_by(is_active=True).count()
-    outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
-    inside_count = max(0, total_vehicles - outside_count)
+    outside_count = Vehicle.query.filter_by(is_active=True, current_vehicle_location='OUT').count()
+    inside_count = Vehicle.query.filter_by(is_active=True, current_vehicle_location='INSIDE').count()
 
     return render_template(
         'gate_control.html',
@@ -134,12 +133,9 @@ def currently_inside():
     """Vehicles currently stationed INSIDE depot/premises (Available)."""
     search = request.args.get('search', '').strip()
     
-    # Exclude vehicles currently outside on active trip
-    outside_vehicle_ids = [m.vehicle_id for m in VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).all()]
-    
     query = Vehicle.query.filter(
         Vehicle.is_active == True,
-        Vehicle.id.notin_(outside_vehicle_ids) if outside_vehicle_ids else True
+        Vehicle.current_vehicle_location == 'INSIDE'
     )
     
     if search:
@@ -320,9 +316,8 @@ def live_gate_feed():
             "remarks": latest_denied.remarks
         }
 
-    total_vehicles = Vehicle.query.filter_by(is_active=True).count()
-    outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
-    inside_count = max(0, total_vehicles - outside_count)
+    outside_count = Vehicle.query.filter_by(is_active=True, current_vehicle_location='OUT').count()
+    inside_count = Vehicle.query.filter_by(is_active=True, current_vehicle_location='INSIDE').count()
     pending_scan = RFIDService.get_pending_scan()
 
     return jsonify({
@@ -343,6 +338,7 @@ def api_confirm_scan():
     data = request.get_json(silent=True) or {}
     uid = data.get('uid')
     direction = data.get('direction', 'ENTRY')
+    vehicle_id = data.get('vehicle_id')
     driver_id = data.get('driver_id')
     driver_name = data.get('driver_name')
     remarks = data.get('remarks')
@@ -351,14 +347,18 @@ def api_confirm_scan():
     if not uid:
         return jsonify({"success": False, "message": "RFID UID is required."}), 400
 
+    v_id = int(vehicle_id) if vehicle_id and str(vehicle_id).isdigit() else None
+    d_id = int(driver_id) if driver_id and str(driver_id).isdigit() else None
+
     success, msg, movement_data = MovementService.confirm_movement(
         uid=uid,
         direction=direction,
-        driver_id=int(driver_id) if driver_id else None,
+        driver_id=d_id,
         driver_name=driver_name,
         operator_user=current_user,
         remarks=remarks,
-        device_id=device_id
+        device_id=device_id,
+        vehicle_id=v_id
     )
 
     if not success:

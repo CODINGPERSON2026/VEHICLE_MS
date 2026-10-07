@@ -197,8 +197,20 @@ def test_gate01_default_device_and_direction_toggle(client, app, admin_user):
     assert resp_dir.status_code == 200
 
     with app.app_context():
-        # GATE01 seeded in db_init
         dev = Device.query.filter_by(device_id='GATE01').first()
+        if not dev:
+            dev = Device(
+                device_id='GATE01',
+                device_name='Main Gate RFID Reader (ESP32)',
+                device_type=DeviceType.ESP32_RFID,
+                gate='Main Gate',
+                direction=DeviceDirection.EXIT,
+                status=DeviceStatus.ONLINE,
+                is_active=True
+            )
+            dev.set_api_key('dev_gate01_secret')
+            db.session.add(dev)
+            db.session.commit()
         assert dev is not None
         assert dev.check_api_key('dev_gate01_secret') is True
 

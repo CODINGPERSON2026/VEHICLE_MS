@@ -4,29 +4,6 @@ from models.driver import Driver
 from models.audit import AuditAction
 from services.audit_service import log_audit
 
-DEFAULT_SAMPLE_DRIVERS = [
-    {"name": "Rajesh Sharma", "employee_id": "DRV-001", "mobile_number": "9820123456", "designation": "Senior Driver"},
-    {"name": "Sunil Verma", "employee_id": "DRV-002", "mobile_number": "9820234567", "designation": "Staff Driver"},
-    {"name": "Ramesh Patil", "employee_id": "DRV-003", "mobile_number": "9820345678", "designation": "Staff Driver"},
-    {"name": "Arsh Mulla", "employee_id": "DRV-004", "mobile_number": "9820456789", "designation": "Executive Chauffeur"},
-    {"name": "Vikram Singh", "employee_id": "DRV-005", "mobile_number": "9820567890", "designation": "Heavy Vehicle Driver"},
-    {"name": "Amit Deshmukh", "employee_id": "DRV-006", "mobile_number": "9820678901", "designation": "Staff Driver"},
-    {"name": "Pradeep Kumar", "employee_id": "DRV-007", "mobile_number": "9820789012", "designation": "Pool Driver"},
-    {"name": "Sanjay Yadav", "employee_id": "DRV-008", "mobile_number": "9820890123", "designation": "Pool Driver"},
-    {"name": "Manoj Shinde", "employee_id": "DRV-009", "mobile_number": "9820901234", "designation": "Contractor Driver"},
-    {"name": "Ganesh Kadam", "employee_id": "DRV-010", "mobile_number": "9821012345", "designation": "Staff Driver"},
-    {"name": "Dinesh Pawar", "employee_id": "DRV-011", "mobile_number": "9821123456", "designation": "Staff Driver"},
-    {"name": "Suresh More", "employee_id": "DRV-012", "mobile_number": "9821234567", "designation": "Pool Driver"},
-    {"name": "Kiran Sawant", "employee_id": "DRV-013", "mobile_number": "9821345678", "designation": "Valet Driver"},
-    {"name": "Mahesh Gaikwad", "employee_id": "DRV-014", "mobile_number": "9821456789", "designation": "Staff Driver"},
-    {"name": "Vijay Jadhav", "employee_id": "DRV-015", "mobile_number": "9821567890", "designation": "Heavy Vehicle Driver"},
-    {"name": "Rahul Bhosle", "employee_id": "DRV-016", "mobile_number": "9821678901", "designation": "Pool Driver"},
-    {"name": "Sachin Chavan", "employee_id": "DRV-017", "mobile_number": "9821789012", "designation": "Contractor Driver"},
-    {"name": "Pravin Salunkhe", "employee_id": "DRV-018", "mobile_number": "9821890123", "designation": "Executive Chauffeur"},
-    {"name": "Nitin Kamble", "employee_id": "DRV-019", "mobile_number": "9821901234", "designation": "Staff Driver"},
-    {"name": "Anil Mane", "employee_id": "DRV-020", "mobile_number": "9822012345", "designation": "Emergency / Ambulance"}
-]
-
 class DriverService:
     @staticmethod
     def get_all_drivers(search=None, active_only=False):
@@ -167,7 +144,9 @@ class DriverService:
         name = driver.name
         # Unlink from historical movements so logs stay intact
         from models.movement import VehicleMovement
+        from models.rfid import RFIDCard
         VehicleMovement.query.filter_by(driver_id=driver.id).update({VehicleMovement.driver_id: None})
+        RFIDCard.query.filter_by(driver_id=driver.id).update({RFIDCard.driver_id: None})
 
         db.session.delete(driver)
         db.session.commit()
@@ -178,21 +157,3 @@ class DriverService:
             user=user
         )
         return True, f"Driver '{name}' deleted successfully."
-
-    @staticmethod
-    def seed_default_drivers():
-        """Ensure 20 default sample drivers exist in database."""
-        if Driver.query.count() == 0:
-            for item in DEFAULT_SAMPLE_DRIVERS:
-                drv = Driver(
-                    name=item["name"],
-                    employee_id=item["employee_id"],
-                    mobile_number=item["mobile_number"],
-                    designation=item["designation"],
-                    is_active=True
-                )
-                db.session.add(drv)
-            try:
-                db.session.commit()
-            except Exception:
-                db.session.rollback()

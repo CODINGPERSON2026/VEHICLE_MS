@@ -1,13 +1,34 @@
 import os
 from datetime import timedelta
+from urllib.parse import quote_plus
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
+# Database Credentials
+DB_USER = os.environ.get('DB_USER', 'root')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', 'yawar@123')
+DB_HOST = os.environ.get('DB_HOST', 'localhost')
+DB_PORT = os.environ.get('DB_PORT', '3306')
+DB_NAME = os.environ.get('DB_NAME', 'vms')
+
+# Constructed MySQL SQLAlchemy Connection URI
+DEFAULT_DATABASE_URL = (
+    f"mysql+pymysql://{DB_USER}:{quote_plus(DB_PASSWORD)}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    if DB_PASSWORD else
+    f"mysql+pymysql://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
+
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'smart-rfid-gate-management-secret-key-2026-xyz')
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        'DATABASE_URL', 'mysql+pymysql://root:qaz123QAZ%21%40%23@localhost/vehicle_management'
-    )
+    
+    # Database Configuration
+    DB_USER = DB_USER
+    DB_PASSWORD = DB_PASSWORD
+    DB_HOST = DB_HOST
+    DB_PORT = DB_PORT
+    DB_NAME = DB_NAME
+    
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', DEFAULT_DATABASE_URL)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_recycle': 280,
@@ -40,7 +61,10 @@ class Config:
 
 class TestingConfig(Config):
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        'TEST_DATABASE_URL',
+        os.environ.get('DATABASE_URL', DEFAULT_DATABASE_URL)
+    )
     WTF_CSRF_ENABLED = False
     DEVICE_HEARTBEAT_TIMEOUT = 10
 

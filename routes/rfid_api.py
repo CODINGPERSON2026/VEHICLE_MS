@@ -5,6 +5,7 @@ from flask_login import login_required, current_user
 from database.db_init import db
 from models.rfid import RFIDCard, CardStatus, normalize_uid
 from models.vehicle import Vehicle
+from models.driver import Driver
 from models.device import Device, DeviceStatus
 from models.settings import SystemSetting
 from models.user import Role
@@ -23,11 +24,13 @@ def list_cards():
     
     cards = RFIDService.get_all_cards(search=search, status=status)
     vehicles = Vehicle.query.filter_by(is_active=True).order_by(Vehicle.registration_number.asc()).all()
+    drivers = Driver.query.filter_by(is_active=True).order_by(Driver.name.asc()).all()
     
     return render_template(
         'rfid_cards.html',
         cards=cards,
         vehicles=vehicles,
+        drivers=drivers,
         search=search,
         status=status,
         statuses=CardStatus.CHOICES
@@ -41,14 +44,28 @@ def assign_card():
         return redirect(url_for('rfid.list_cards'))
 
     uid = request.form.get('uid', '').strip()
+    assign_type = request.form.get('assign_type', '').strip()
+    driver_id = request.form.get('driver_id')
     vehicle_id = request.form.get('vehicle_id')
     expiry_date = request.form.get('expiry_date')
     remarks = request.form.get('remarks', '').strip()
 
-    v_id = int(vehicle_id) if vehicle_id and vehicle_id.isdigit() else None
+    d_id = int(driver_id) if driver_id and str(driver_id).isdigit() else None
+    v_id = int(vehicle_id) if vehicle_id and str(vehicle_id).isdigit() else None
+
+    if assign_type == 'driver':
+        v_id = None
+    elif assign_type == 'vehicle':
+        d_id = None
+
+    if not d_id and not v_id:
+        flash('Please select either a Driver or a Vehicle to assign this RFID card.', 'warning')
+        return redirect(url_for('rfid.list_cards'))
+
     success, msg, card = RFIDService.assign_card(
         uid=uid,
         vehicle_id=v_id,
+        driver_id=d_id,
         expiry_date=expiry_date,
         remarks=remarks,
         user=current_user

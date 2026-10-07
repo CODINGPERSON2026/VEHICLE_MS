@@ -20,9 +20,6 @@ def init_db(app):
         db.create_all()
         seed_default_settings()
 
-        from services.driver_service import DriverService
-        DriverService.seed_default_drivers()
-
 
 def seed_default_settings():
     """Seed initial system settings if not already present."""
@@ -35,8 +32,7 @@ def seed_default_settings():
         'device_heartbeat_timeout': ('35', 'Seconds before an inactive device is marked OFFLINE'),
         'barrier_auto_close_delay': ('4', 'Seconds to simulate barrier gate open before auto-closing'),
         'anpr_confidence_threshold': ('80.0', 'Minimum confidence score (%) for ANPR auto-match'),
-        'dashboard_refresh_interval': ('1', 'Dashboard auto-refresh interval in seconds'),
-        'demo_mode_enabled': ('0', 'Whether simulated demo controls and quick actions are shown')
+        'dashboard_refresh_interval': ('1', 'Dashboard auto-refresh interval in seconds')
     }
 
     for key, (val, desc) in defaults.items():
@@ -44,25 +40,6 @@ def seed_default_settings():
         if not setting:
             new_setting = SystemSetting(key=key, value=val, description=desc)
             db.session.add(new_setting)
-
-    # Seed default GATE01 device for plug-and-play ESP32 hardware
-    from models.device import Device, DeviceType, DeviceStatus, DeviceDirection
-    gate01 = Device.query.filter_by(device_id='GATE01').first()
-    if not gate01:
-        gate01 = Device(
-            device_id='GATE01',
-            device_name='Main Gate RFID Reader (ESP32)',
-            device_type=DeviceType.ESP32_RFID,
-            gate='Main Gate',
-            direction=DeviceDirection.EXIT,
-            status=DeviceStatus.ONLINE,
-            is_active=True
-        )
-        gate01.set_api_key('dev_gate01_secret')
-        db.session.add(gate01)
-    else:
-        # Ensure direction is EXIT
-        gate01.direction = DeviceDirection.EXIT
 
     try:
         db.session.commit()

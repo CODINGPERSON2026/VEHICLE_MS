@@ -31,8 +31,8 @@ def get_stats():
     blocked_vehicles = Vehicle.query.filter_by(is_active=True, auth_status=AuthStatus.BLOCKED).count()
     
     total_rfid_cards = RFIDCard.query.count()
-    vehicles_outside = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
-    vehicles_inside = max(0, total_vehicles - vehicles_outside)
+    vehicles_outside = Vehicle.query.filter_by(is_active=True, current_vehicle_location='OUT').count()
+    vehicles_inside = Vehicle.query.filter_by(is_active=True, current_vehicle_location='INSIDE').count()
     
     today_in = VehicleMovement.query.filter(
         VehicleMovement.entry_time.between(start_today, end_today)
@@ -144,35 +144,65 @@ def get_charts():
 @login_required
 def get_recent_activity():
     """Returns recent combined activity feed for the dashboard table."""
-    recent_movements = VehicleMovement.query.order_by(VehicleMovement.entry_time.desc()).limit(10).all()
+    from models.driver import Driver
+    recent_movements = VehicleMovement.query.order_by(
+        db.func.coalesce(VehicleMovement.exit_time, VehicleMovement.entry_time).desc()
+    ).limit(10).all()
     recent_denials = DeniedAttempt.query.order_by(DeniedAttempt.timestamp.desc()).limit(10).all()
 
     combined = []
     for m in recent_movements:
+        drv_record = None
+        if m.driver_id:
+            drv_record = db.session.get(Driver, m.driver_id)
+        if not drv_record and m.rfid_card and m.rfid_card.driver:
+            drv_record = m.rfid_card.driver
+        if not drv_record and m.driver_name:
+            drv_record = Driver.query.filter_by(name=m.driver_name).first()
+
+        drv_name = m.driver_name or (drv_record.name if drv_record else "Unassigned")
+        drv_mobile = drv_record.mobile_number if drv_record and drv_record.mobile_number else None
+
+        v_type = m.vehicle.vehicle_type if m.vehicle else "N/A"
+        v_plate = m.vehicle.registration_number if m.vehicle else "N/A"
+        event_time = m.exit_time if m.exit_time and m.status == MovementStatus.OUTSIDE else m.entry_time
+
         combined.append({
-            "timestamp": m.exit_time.strftime('%H:%M:%S') if m.exit_time and m.status == MovementStatus.OUTSIDE else m.entry_time.strftime('%H:%M:%S'),
-            "raw_time": m.exit_time if m.exit_time and m.status == MovementStatus.OUTSIDE else m.entry_time,
-            "vehicle_number": m.vehicle.registration_number if m.vehicle else "N/A",
-            "rfid_uid": m.rfid_card.uid if m.rfid_card else "N/A",
+            "timestamp": event_time.strftime('%H:%M:%S') if event_time else "--:--:--",
+            "raw_time": event_time,
+            "driver_name": drv_name,
+            "driver_mobile": drv_mobile,
+            "vehicle_number": v_plate,
+            "vehicle_type": v_type,
             "event": "EXIT" if m.status == MovementStatus.OUTSIDE else "ENTRY",
-            "status": m.status,
-            "device": m.exit_device.device_name if m.status == MovementStatus.OUTSIDE and m.exit_device else (m.entry_device.device_name if m.entry_device else "System"),
-            "badge_class": "bg-success" if m.status == MovementStatus.INSIDE else "bg-info"
+            "badge_class": "bg-info text-white" if m.status == MovementStatus.OUTSIDE else "bg-success text-white"
         })
 
     for d in recent_denials:
+        drv_record = None
+        if d.rfid_uid:
+            card = RFIDCard.query.filter_by(uid=d.rfid_uid).first()
+            if card and card.driver:
+                drv_record = card.driver
+
+        drv_name = drv_record.name if drv_record else "Unknown"
+        drv_mobile = drv_record.mobile_number if drv_record and drv_record.mobile_number else None
+
+        v_type = d.vehicle.vehicle_type if d.vehicle else "N/A"
+        v_plate = d.vehicle_number or (d.vehicle.registration_number if d.vehicle else "N/A")
+
         combined.append({
-            "timestamp": d.timestamp.strftime('%H:%M:%S'),
+            "timestamp": d.timestamp.strftime('%H:%M:%S') if d.timestamp else "--:--:--",
             "raw_time": d.timestamp,
-            "vehicle_number": d.vehicle_number or (d.vehicle.registration_number if d.vehicle else "Unknown"),
-            "rfid_uid": d.rfid_uid or "Unknown",
-            "event": f"DENIED ({d.direction})",
-            "status": d.reason,
-            "device": d.device.device_name if d.device else "System",
-            "badge_class": "bg-danger"
+            "driver_name": drv_name,
+            "driver_mobile": drv_mobile,
+            "vehicle_number": v_plate,
+            "vehicle_type": v_type,
+            "event": f"DENIED ({d.direction})" if d.direction else "DENIED",
+            "badge_class": "bg-danger text-white"
         })
 
-    combined.sort(key=lambda x: x['raw_time'], reverse=True)
+    combined.sort(key=lambda x: x['raw_time'] or datetime.min, reverse=True)
     clean_feed = [{k: v for k, v in item.items() if k != 'raw_time'} for item in combined[:15]]
 
     return jsonify(clean_feed)

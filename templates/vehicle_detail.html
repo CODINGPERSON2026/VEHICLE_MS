@@ -90,6 +90,16 @@
             <div class="text-muted small">Mobile Number</div>
             <div class="fw-bold">{{ vehicle.mobile_number or '-' }}</div>
           </div>
+          <div class="col-6">
+            <div class="text-muted small">Current Location</div>
+            <div class="fw-bold">
+              {% if vehicle.current_vehicle_location == 'OUT' %}
+              <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="fa-solid fa-arrow-right-from-bracket me-1"></i>OUT</span>
+              {% else %}
+              <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="fa-solid fa-warehouse me-1"></i>INSIDE DEPOT</span>
+              {% endif %}
+            </div>
+          </div>
         </div>
       </div>
     </div>

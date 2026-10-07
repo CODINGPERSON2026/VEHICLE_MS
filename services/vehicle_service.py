@@ -80,6 +80,7 @@ class VehicleService:
             armynumber=armynumber,
             mobile_number=data.get('mobile_number', '').strip(),
             auth_status=data.get('auth_status', AuthStatus.AUTHORIZED),
+            current_vehicle_location='INSIDE',
             is_active=True,
             is_demo=is_demo
         )

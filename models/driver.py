@@ -16,12 +16,22 @@ class Driver(db.Model):
 
     license_number = db.Column(db.String(64), nullable=True)
     mobile_number = db.Column(db.String(24), nullable=True)
+    rfid_uid = db.Column(db.String(32), unique=True, nullable=True, index=True)
     designation = db.Column(db.String(64), default='Staff Driver', nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
     remarks = db.Column(db.Text, nullable=True)
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def primary_rfid_uid(self):
+        """Returns assigned RFID card UID or '-'."""
+        if self.rfid_uid:
+            return self.rfid_uid
+        if self.rfid_cards and len(self.rfid_cards) > 0:
+            return self.rfid_cards[0].uid
+        return "-"
 
     @property
     def driverank(self):

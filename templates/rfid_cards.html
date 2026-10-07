@@ -11,7 +11,7 @@
       <form method="GET" action="{{ url_for('rfid.list_cards') }}" class="d-flex gap-2 flex-grow-1" style="max-width: 600px;">
         <div class="input-group">
           <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
-          <input type="text" class="form-control" name="search" value="{{ search }}" placeholder="Search RFID UID, Vehicle Plate, Driver...">
+          <input type="text" class="form-control" name="search" value="{{ search }}" placeholder="Search RFID UID, Driver Name, Army No, Plate...">
         </div>
         <select class="form-select" name="status" style="max-width: 180px;">
           <option value="">All Statuses</option>
@@ -43,9 +43,8 @@
       <thead class="table-light small text-uppercase text-secondary">
         <tr>
           <th>RFID UID</th>
-          <th>Assigned Vehicle</th>
-          <th>Vehicle Type</th>
-          <th>Driver / Custodian</th>
+          <th>Assigned To</th>
+          <th>Type / Role</th>
           <th>Card Status</th>
           <th>Assigned Date</th>
           <th>Card Expiry</th>
@@ -62,16 +61,40 @@
             {% endif %}
           </td>
           <td>
-            {% if c.vehicle %}
-            <a href="{{ url_for('vehicles.view_vehicle', vehicle_id=c.vehicle.id) }}" class="font-monospace fw-bold text-dark text-decoration-none">
-              {{ c.vehicle.registration_number }}
-            </a>
+            {% if c.driver %}
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
+                <i class="fa-solid fa-id-badge me-1"></i>DRIVER
+              </span>
+              <div>
+                <span class="fw-bold text-dark">{{ c.driver.name }}</span>
+                {% if c.driver.armynumber %}
+                <span class="text-muted small font-monospace d-block">Army: {{ c.driver.armynumber }}</span>
+                {% endif %}
+              </div>
+            </div>
+            {% elif c.vehicle %}
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1">
+                <i class="fa-solid fa-truck me-1"></i>VEHICLE
+              </span>
+              <a href="{{ url_for('vehicles.view_vehicle', vehicle_id=c.vehicle.id) }}" class="font-monospace fw-bold text-dark text-decoration-none">
+                {{ c.vehicle.registration_number }}
+              </a>
+            </div>
             {% else %}
-            <span class="text-muted fst-italic">Unassigned</span>
+            <span class="badge bg-secondary-subtle text-secondary border">Unassigned</span>
             {% endif %}
           </td>
-          <td>{{ c.vehicle.vehicle_type if c.vehicle else '-' }}</td>
-          <td>{{ c.vehicle.driver_name if c.vehicle and c.vehicle.driver_name else '-' }}</td>
+          <td>
+            {% if c.driver %}
+              <span class="badge bg-light text-dark border">{{ c.driver.driver_rank or c.driver.designation or 'Driver' }}</span>
+            {% elif c.vehicle %}
+              <span class="badge bg-light text-dark border">{{ c.vehicle.vehicle_type }}</span>
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </td>
           <td>
             {% if c.card_status == 'ACTIVE' %}
             <span class="badge bg-success">ACTIVE</span>
@@ -93,10 +116,10 @@
               <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#statusModal{{ c.id }}" title="Change Card Status">
                 <i class="fa-solid fa-shield-halved"></i>
               </button>
-              {% if c.vehicle %}
-              <form method="POST" action="{{ url_for('rfid.unassign_card', card_id=c.id) }}" class="d-inline" onsubmit="return confirm('Unassign RFID Card {{ c.uid }} from vehicle {{ c.vehicle.registration_number }}?');">
+              {% if c.vehicle or c.driver %}
+              <form method="POST" action="{{ url_for('rfid.unassign_card', card_id=c.id) }}" class="d-inline" onsubmit="return confirm('Unassign RFID Card {{ c.uid }} from {{ c.driver.name if c.driver else c.vehicle.registration_number }}?');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                <button type="submit" class="btn btn-outline-warning" title="Unassign from Vehicle">
+                <button type="submit" class="btn btn-outline-warning" title="Unassign Card">
                   <i class="fa-solid fa-link-slash"></i>
                 </button>
               </form>
@@ -148,7 +171,7 @@
         </div>
         {% else %}
         <tr>
-          <td colspan="8" class="text-center py-5 text-muted">
+          <td colspan="7" class="text-center py-5 text-muted">
             <i class="fa-solid fa-id-card fs-1 d-block mb-2 text-secondary"></i>
             No RFID card records found.
           </td>
@@ -185,19 +208,54 @@
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
           <div class="row g-3">
-            <div class="col-md-6">
+            <div class="col-md-12">
               <label class="form-label small fw-semibold">Scanned RFID UID *</label>
               <input type="text" class="form-control font-monospace text-uppercase fw-bold text-primary fs-5" id="assign-uid-input" name="uid" placeholder="Tap Card On Reader..." required>
             </div>
 
-            <div class="col-md-6">
-              <label class="form-label small fw-semibold">Assign to Vehicle *</label>
-              <select class="form-select" name="vehicle_id" required>
+            <!-- Target Selection Toggle -->
+            <div class="col-12">
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-2">Assign This RFID Card To *</label>
+              <div class="d-flex gap-4 p-2 bg-light rounded-3 border">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="assign_type" id="assignTypeDriver_enroll" value="driver" checked onchange="toggleAssignTarget('enroll')">
+                  <label class="form-check-label fw-semibold cursor-pointer" for="assignTypeDriver_enroll">
+                    <i class="fa-solid fa-id-badge text-success me-1"></i>Driver (Personal Driver Badge)
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="assign_type" id="assignTypeVehicle_enroll" value="vehicle" onchange="toggleAssignTarget('enroll')">
+                  <label class="form-check-label fw-semibold cursor-pointer" for="assignTypeVehicle_enroll">
+                    <i class="fa-solid fa-truck text-primary me-1"></i>Vehicle (Vehicle Windshield Tag)
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Driver Dropdown -->
+            <div class="col-md-12" id="driverSelectWrapper_enroll">
+              <label class="form-label small fw-semibold">Select Driver from Driver Master *</label>
+              <select class="form-select" name="driver_id" id="driverSelect_enroll" required>
+                <option value="">-- Select Registered Driver --</option>
+                {% for d in drivers %}
+                <option value="{{ d.id }}">
+                  {{ d.name }}{% if d.driver_rank %} ({{ d.driver_rank }}){% endif %}{% if d.armynumber %} [Army: {{ d.armynumber }}]{% endif %}{% if d.company %} - Coy: {{ d.company }}{% endif %}
+                </option>
+                {% endfor %}
+              </select>
+              <div class="form-text small">Links this RFID card to the driver's database record.</div>
+            </div>
+
+            <!-- Vehicle Dropdown -->
+            <div class="col-md-12 d-none" id="vehicleSelectWrapper_enroll">
+              <label class="form-label small fw-semibold">Select Vehicle *</label>
+              <select class="form-select" name="vehicle_id" id="vehicleSelect_enroll">
                 <option value="">-- Select Registered Vehicle --</option>
                 {% for v in vehicles %}
                 <option value="{{ v.id }}">{{ v.registration_number }} ({{ v.vehicle_type }})</option>
                 {% endfor %}
               </select>
+              <div class="form-text small">Links this RFID card to the vehicle's database record.</div>
             </div>
 
             <div class="col-md-6">
@@ -207,7 +265,7 @@
 
             <div class="col-md-6">
               <label class="form-label small fw-semibold">Remarks</label>
-              <input type="text" class="form-control" name="remarks" placeholder="Optional notes (e.g. Primary Tag)">
+              <input type="text" class="form-control" name="remarks" placeholder="Optional notes (e.g. Primary Driver Badge)">
             </div>
           </div>
 
@@ -236,15 +294,50 @@
             <label class="form-label small fw-semibold">RFID UID *</label>
             <input type="text" class="form-control font-monospace text-uppercase" name="uid" placeholder="e.g. A37F291C" required>
           </div>
+
+          <!-- Target Selection Toggle -->
           <div class="mb-3">
-            <label class="form-label small fw-semibold">Assign to Vehicle *</label>
-            <select class="form-select" name="vehicle_id" required>
+            <label class="form-label small fw-bold text-secondary text-uppercase mb-2">Assign This RFID Card To *</label>
+            <div class="d-flex gap-3 p-2 bg-light rounded-3 border">
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="assign_type" id="assignTypeDriver_manual" value="driver" checked onchange="toggleAssignTarget('manual')">
+                <label class="form-check-label fw-semibold cursor-pointer" for="assignTypeDriver_manual">
+                  <i class="fa-solid fa-id-badge text-success me-1"></i>Driver (Driver Badge)
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="assign_type" id="assignTypeVehicle_manual" value="vehicle" onchange="toggleAssignTarget('manual')">
+                <label class="form-check-label fw-semibold cursor-pointer" for="assignTypeVehicle_manual">
+                  <i class="fa-solid fa-truck text-primary me-1"></i>Vehicle (Vehicle Tag)
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Driver Dropdown -->
+          <div class="mb-3" id="driverSelectWrapper_manual">
+            <label class="form-label small fw-semibold">Select Driver from Driver Master *</label>
+            <select class="form-select" name="driver_id" id="driverSelect_manual" required>
+              <option value="">-- Select Registered Driver --</option>
+              {% for d in drivers %}
+              <option value="{{ d.id }}">
+                {{ d.name }}{% if d.driver_rank %} ({{ d.driver_rank }}){% endif %}{% if d.armynumber %} [Army: {{ d.armynumber }}]{% endif %}{% if d.company %} - Coy: {{ d.company }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Vehicle Dropdown -->
+          <div class="mb-3 d-none" id="vehicleSelectWrapper_manual">
+            <label class="form-label small fw-semibold">Select Vehicle *</label>
+            <select class="form-select" name="vehicle_id" id="vehicleSelect_manual">
               <option value="">-- Select Registered Vehicle --</option>
               {% for v in vehicles %}
               <option value="{{ v.id }}">{{ v.registration_number }} ({{ v.vehicle_type }})</option>
               {% endfor %}
             </select>
           </div>
+
           <div class="mb-3">
             <label class="form-label small fw-semibold">Card Expiry Date (Optional)</label>
             <input type="date" class="form-control" name="expiry_date">
@@ -262,4 +355,36 @@
     </div>
   </div>
 </div>
+
+<script>
+function toggleAssignTarget(prefix) {
+  const isDriver = document.getElementById('assignTypeDriver_' + prefix).checked;
+  const driverWrap = document.getElementById('driverSelectWrapper_' + prefix);
+  const vehicleWrap = document.getElementById('vehicleSelectWrapper_' + prefix);
+  const driverSel = document.getElementById('driverSelect_' + prefix);
+  const vehicleSel = document.getElementById('vehicleSelect_' + prefix);
+  
+  if (isDriver) {
+    if (driverWrap) driverWrap.classList.remove('d-none');
+    if (vehicleWrap) vehicleWrap.classList.add('d-none');
+    if (driverSel) {
+      driverSel.required = true;
+    }
+    if (vehicleSel) {
+      vehicleSel.required = false;
+      vehicleSel.value = '';
+    }
+  } else {
+    if (driverWrap) driverWrap.classList.add('d-none');
+    if (vehicleWrap) vehicleWrap.classList.remove('d-none');
+    if (driverSel) {
+      driverSel.required = false;
+      driverSel.value = '';
+    }
+    if (vehicleSel) {
+      vehicleSel.required = true;
+    }
+  }
+}
+</script>
 {% endblock %}
