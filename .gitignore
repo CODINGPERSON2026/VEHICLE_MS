@@ -1,0 +1,92 @@
+# =========================
+# Environment / Secrets
+# =========================
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# =========================
+# Virtual Environment
+# =========================
+venv/
+env/
+.venv/
+vmsvenv/
+vmsvenv*/
+umsvenv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# =========================
+# Python / Testing
+# =========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.code-workspace
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+
+# =========================
+# Generated / Local Files
+# =========================
+reports/
+backups/
+*.bak
+*.tmp
+
+# =========================
+# Local Database / Data
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# ML / Model Artifacts
+# =========================
+*.pkl
+*.pickle
+*.joblib
+*.h5
+*.keras
+*.onnx
+models/*.bin
+models/*.pt
+models/*.pth
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# Temporary files
+# =========================
+*.swp
+*.swo
+*.orig

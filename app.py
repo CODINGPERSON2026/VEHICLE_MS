@@ -1,4 +1,9 @@
 import os
+
+from dotenv import load_dotenv
+
+
+load_dotenv()
 from flask import Flask, render_template, redirect, url_for, flash
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
