@@ -35,6 +35,9 @@ def create_app(config_name=None):
     csrf.exempt('routes.rfid_api.api_device_heartbeat')
     csrf.exempt('routes.rfid_api.api_enroll_scan')
     csrf.exempt('routes.rfid_api.api_barrier_status')
+    csrf.exempt('routes.rfid_api.api_lookup_scan')
+    csrf.exempt('routes.rfid_api.api_cancel_pending_scan')
+    csrf.exempt('routes.movements.api_confirm_scan')
     csrf.exempt('routes.drivers.api_assign_movement_driver')
 
     # Setup Flask-Login

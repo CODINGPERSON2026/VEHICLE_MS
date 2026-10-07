@@ -11,6 +11,7 @@ from models.settings import SystemSetting
 from models.user import Role
 from services.movement_service import MovementService
 from services.vehicle_service import VehicleService
+from services.rfid_service import RFIDService
 
 movements_bp = Blueprint('movements', __name__)
 
@@ -322,9 +323,49 @@ def live_gate_feed():
     total_vehicles = Vehicle.query.filter_by(is_active=True).count()
     outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
     inside_count = max(0, total_vehicles - outside_count)
+    pending_scan = RFIDService.get_pending_scan()
+
     return jsonify({
         "last_event": last_event,
+        "pending_scan": pending_scan,
         "inside_count": inside_count,
         "outside_count": outside_count,
         "server_time": datetime.utcnow().strftime('%H:%M:%S')
     })
+
+@movements_bp.route('/api/movements/confirm_scan', methods=['POST'])
+@login_required
+def api_confirm_scan():
+    """
+    Operator confirms IN or OUT for a scanned vehicle.
+    Updates the movement record, inside/outside counts, and audit trail.
+    """
+    data = request.get_json(silent=True) or {}
+    uid = data.get('uid')
+    direction = data.get('direction', 'ENTRY')
+    driver_id = data.get('driver_id')
+    driver_name = data.get('driver_name')
+    remarks = data.get('remarks')
+    device_id = data.get('device_id', 'GATE01')
+
+    if not uid:
+        return jsonify({"success": False, "message": "RFID UID is required."}), 400
+
+    success, msg, movement_data = MovementService.confirm_movement(
+        uid=uid,
+        direction=direction,
+        driver_id=int(driver_id) if driver_id else None,
+        driver_name=driver_name,
+        operator_user=current_user,
+        remarks=remarks,
+        device_id=device_id
+    )
+
+    if not success:
+        return jsonify({"success": False, "message": msg}), 400
+
+    return jsonify({
+        "success": True,
+        "message": msg,
+        "data": movement_data
+    }), 200

@@ -62,6 +62,18 @@
             <input type="number" class="form-control" name="dashboard_refresh_interval" value="{{ settings.get('dashboard_refresh_interval', '1') }}" min="1" max="60" required>
           </div>
 
+          <div class="mb-4 p-3 bg-light rounded-3 border">
+            <div class="form-check form-switch mb-1">
+              <input class="form-check-input" type="checkbox" role="switch" id="require_guard_confirmation" name="require_guard_confirmation" value="1" {% if settings.get('require_guard_confirmation', '1') == '1' %}checked{% endif %}>
+              <label class="form-check-label fw-bold text-dark" for="require_guard_confirmation">
+                <i class="fa-solid fa-user-shield me-1 text-primary"></i>Require Guard Confirmation for RFID Scans
+              </label>
+            </div>
+            <div class="form-text small text-muted">
+              When enabled, scanning a card displays an interactive popup with vehicle and driver telemetry for guard verification before committing In / Out counts and opening gate.
+            </div>
+          </div>
+
           <button type="submit" class="btn btn-primary px-4 shadow-sm">
             <i class="fa-solid fa-floppy-disk me-1"></i>Save System Settings
           </button>

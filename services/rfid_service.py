@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, date, timedelta
 from database.db_init import db
 from models.rfid import RFIDCard, CardStatus, normalize_uid
@@ -10,6 +11,15 @@ _enrollment_buffer = {
     'uid': None,
     'timestamp': None,
     'device_id': None
+}
+
+# In-memory pending scan buffer awaiting guard confirmation
+_pending_scan_buffer = {
+    'uid': None,
+    'timestamp': None,
+    'device_id': None,
+    'scan_id': None,
+    'data': None
 }
 
 class RFIDService:
@@ -47,6 +57,137 @@ class RFIDService:
         """Clear enrollment buffer."""
         global _enrollment_buffer
         _enrollment_buffer = {'uid': None, 'timestamp': None, 'device_id': None}
+
+    @staticmethod
+    def lookup_card_and_vehicle(raw_uid: str):
+        """Lookup full vehicle and driver telemetry for RFID card confirmation."""
+        norm_uid = normalize_uid(raw_uid)
+        if not norm_uid:
+            return {"success": False, "reason": "INVALID_UID", "message": "Invalid or empty RFID UID."}
+
+        card = RFIDCard.query.filter_by(uid=norm_uid).first()
+        if not card:
+            return {"success": False, "reason": "UNKNOWN_RFID", "message": f"RFID tag '{norm_uid}' is not registered in the system."}
+
+        is_valid, card_err = card.is_valid()
+        if not is_valid:
+            return {"success": False, "reason": card_err, "message": f"RFID card is {card.card_status}."}
+
+        vehicle = card.vehicle
+        if not vehicle or not vehicle.is_active:
+            return {"success": False, "reason": "UNASSIGNED_CARD", "message": "Card is not assigned to an active vehicle."}
+
+        from models.driver import Driver
+        # Check active movement status
+        active_outside = vehicle.get_active_outside_movement()
+        is_outside = active_outside is not None
+        current_status = "OUTSIDE" if is_outside else "INSIDE"
+        allowed_direction = "ENTRY" if is_outside else "EXIT"
+        forbidden_direction = "EXIT" if is_outside else "ENTRY"
+        recommended_direction = allowed_direction
+
+        # Determine driver details
+        assigned_driver_name = active_outside.driver_name if active_outside and active_outside.driver_name else (vehicle.driver_name or vehicle.custodian_name or "Registered Driver")
+        
+        drv_record = Driver.query.filter(
+            (Driver.name == assigned_driver_name) | 
+            (Driver.armynumber == vehicle.armynumber if vehicle.armynumber else False)
+        ).first()
+
+        driver_info = {
+            "name": assigned_driver_name,
+            "armynumber": drv_record.armynumber if drv_record and drv_record.armynumber else (vehicle.armynumber or "N/A"),
+            "rank": drv_record.driver_rank if drv_record and drv_record.driver_rank else (drv_record.designation if drv_record else "Driver"),
+            "designation": drv_record.designation if drv_record else "Vehicle Operator",
+            "mobile": drv_record.mobile_number if drv_record and drv_record.mobile_number else (vehicle.mobile_number or "N/A"),
+            "id": drv_record.id if drv_record else None
+        }
+
+        active_trip_info = None
+        if active_outside:
+            active_trip_info = {
+                "exit_time": active_outside.exit_time.strftime('%H:%M:%S') if active_outside.exit_time else "N/A",
+                "duration": active_outside.formatted_duration,
+                "driver_name": active_outside.driver_name
+            }
+
+        pool_drivers = []
+        all_drivers = Driver.query.filter_by(is_active=True).order_by(Driver.name.asc()).all()
+        for d in all_drivers:
+            pool_drivers.append({
+                "id": d.id,
+                "name": d.name,
+                "armynumber": d.armynumber or "",
+                "rank": d.driver_rank or d.designation or "",
+                "mobile": d.mobile_number or ""
+            })
+
+        return {
+            "success": True,
+            "uid": norm_uid,
+            "vehicle": {
+                "id": vehicle.id,
+                "registration_number": vehicle.registration_number,
+                "vehicle_type": vehicle.vehicle_type,
+                "auth_status": vehicle.auth_status,
+                "custodian_name": vehicle.custodian_name or "N/A",
+                "armynumber": vehicle.armynumber or "N/A",
+                "mobile_number": vehicle.mobile_number or "N/A"
+            },
+            "driver": driver_info,
+            "current_status": current_status,
+            "is_inside": not is_outside,
+            "is_outside": is_outside,
+            "allowed_direction": allowed_direction,
+            "forbidden_direction": forbidden_direction,
+            "recommended_direction": recommended_direction,
+            "active_trip": active_trip_info,
+            "pool_drivers": pool_drivers
+        }
+
+    @staticmethod
+    def stage_pending_scan(raw_uid: str, device_id: str = None):
+        """Look up vehicle and stage as pending scan for operator confirmation."""
+        lookup = RFIDService.lookup_card_and_vehicle(raw_uid)
+        if not lookup.get('success'):
+            return lookup
+        global _pending_scan_buffer
+        scan_id = str(uuid.uuid4())[:8]
+        lookup['scan_id'] = scan_id
+        lookup['device_id'] = device_id or 'GATE01'
+        lookup['scanned_at'] = datetime.utcnow().strftime('%H:%M:%S')
+        _pending_scan_buffer = {
+            'uid': lookup['uid'],
+            'timestamp': datetime.utcnow(),
+            'device_id': device_id or 'GATE01',
+            'scan_id': scan_id,
+            'data': lookup
+        }
+        return lookup
+
+    @staticmethod
+    def get_pending_scan(timeout_seconds=60):
+        """Retrieve active pending scan waiting for confirmation."""
+        global _pending_scan_buffer
+        if _pending_scan_buffer.get('uid') and _pending_scan_buffer.get('timestamp'):
+            age = (datetime.utcnow() - _pending_scan_buffer['timestamp']).total_seconds()
+            if age <= timeout_seconds:
+                return _pending_scan_buffer['data']
+            else:
+                RFIDService.clear_pending_scan()
+        return None
+
+    @staticmethod
+    def clear_pending_scan():
+        """Clear active pending scan."""
+        global _pending_scan_buffer
+        _pending_scan_buffer = {
+            'uid': None,
+            'timestamp': None,
+            'device_id': None,
+            'scan_id': None,
+            'data': None
+        }
 
     @staticmethod
     def get_all_cards(search=None, status=None, is_demo=None):

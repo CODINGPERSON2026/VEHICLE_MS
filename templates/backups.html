@@ -12,7 +12,7 @@
         <h6 class="fw-bold mb-0 text-dark"><i class="fa-solid fa-cloud-arrow-up me-2 text-primary"></i>Online Database Backup</h6>
       </div>
       <div class="card-body p-4">
-        <p class="small text-muted mb-4">Creates a transactional, point-in-time snapshot of the active SQLite database without locking the live gate readers.</p>
+        <p class="small text-muted mb-4">Creates a transactional, point-in-time snapshot (.sql) of the active MySQL database compatible with MySQL Workbench without locking active gate readers.</p>
         
         <form method="POST" action="{{ url_for('settings.create_backup') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
@@ -28,8 +28,8 @@
       <div class="card-body p-4">
         <h6 class="fw-bold text-dark mb-2"><i class="fa-solid fa-shield-halved me-2 text-warning"></i>Backup Integrity Rules</h6>
         <ul class="small text-muted ps-3 mb-0">
-          <li class="mb-1">Backups are stored locally in the <code>backups/</code> directory.</li>
-          <li class="mb-1">Before restoration, files undergo an automated SQLite PRAGMA integrity check.</li>
+          <li class="mb-1">Backups are stored locally in the <code>backups/</code> directory as MySQL <code>.sql</code> script files.</li>
+          <li class="mb-1">Can be opened, edited, or restored directly via <strong>MySQL Workbench</strong> or this web console.</li>
           <li>Restoration automatically creates a pre-restore safety copy.</li>
         </ul>
       </div>

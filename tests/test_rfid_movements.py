@@ -331,4 +331,150 @@ def test_vehicles_outside_and_quick_return(app, client, admin_user, test_device)
         assert veh.has_active_movement().status == MovementStatus.INSIDE
 
 
+def test_rfid_lookup_and_confirmation_flow(client, operator_user, app):
+    """Test the complete verification modal flow: lookup -> operator confirmation -> count update."""
+    with app.app_context():
+        v = Vehicle(
+            registration_number="MH12CONFIRM1",
+            vehicle_type=VehicleType.GYPSY,
+            driver_name="Havaldar Suresh",
+            armynumber="1562910X",
+            auth_status=AuthStatus.AUTHORIZED
+        )
+        db.session.add(v)
+        db.session.flush()
+        c = RFIDCard(uid="CC112233", vehicle_id=v.id, card_status=CardStatus.ACTIVE)
+        db.session.add(c)
+        db.session.commit()
+        veh_id = v.id
+
+    # 1. Card Scanned -> Lookup / Verification
+    lookup_resp = client.post('/api/rfid/lookup_scan', json={"uid": "CC112233"})
+    assert lookup_resp.status_code == 200
+    lookup_data = lookup_resp.get_json()
+    assert lookup_data["success"] is True
+    assert lookup_data["vehicle"]["registration_number"] == "MH12CONFIRM1"
+    assert lookup_data["vehicle"]["vehicle_type"] == VehicleType.GYPSY
+    assert lookup_data["driver"]["name"] == "Havaldar Suresh"
+    assert lookup_data["current_status"] == "INSIDE"
+    assert lookup_data["recommended_direction"] == "EXIT"
+    assert lookup_data["allowed_direction"] == "EXIT"
+    assert lookup_data["forbidden_direction"] == "ENTRY"
+
+    # Verify no movement is recorded in DB yet!
+    with app.app_context():
+        outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
+        assert outside_count == 0
+
+    # Operator logs in
+    client.post('/login', data={'username': 'operator', 'password': 'GuardPass123!'}, follow_redirects=True)
+
+    # TEST: Try confirming ENTRY when vehicle is already INSIDE -> MUST BE REJECTED!
+    illegal_entry_resp = client.post('/api/movements/confirm_scan', json={
+        "uid": "CC112233",
+        "direction": "ENTRY"
+    })
+    assert illegal_entry_resp.status_code == 400
+    illegal_entry_data = illegal_entry_resp.get_json()
+    assert illegal_entry_data["success"] is False
+    assert "already INSIDE" in illegal_entry_data["message"]
+
+    # 2. Operator clicks [Confirm OUT] on the modal (Allowed!)
+    confirm_resp = client.post('/api/movements/confirm_scan', json={
+        "uid": "CC112233",
+        "direction": "EXIT",
+        "driver_name": "Havaldar Suresh"
+    })
+    assert confirm_resp.status_code == 200
+    confirm_data = confirm_resp.get_json()
+    assert confirm_data["success"] is True
+    assert confirm_data["data"]["decision"] == "EXIT_RECORDED"
+    assert confirm_data["data"]["movement_status"] == "OUTSIDE"
+    assert confirm_data["data"]["outside_count"] == 1
+
+    # Verify movement is now committed to database
+    with app.app_context():
+        outside_mov = VehicleMovement.query.filter_by(vehicle_id=veh_id, status=MovementStatus.OUTSIDE).first()
+        assert outside_mov is not None
+        assert outside_mov.driver_name == "Havaldar Suresh"
+
+    # TEST: Try confirming EXIT again when vehicle is already OUTSIDE -> MUST BE REJECTED!
+    illegal_exit_resp = client.post('/api/movements/confirm_scan', json={
+        "uid": "CC112233",
+        "direction": "EXIT"
+    })
+    assert illegal_exit_resp.status_code == 400
+    illegal_exit_data = illegal_exit_resp.get_json()
+    assert illegal_exit_data["success"] is False
+    assert "already OUTSIDE" in illegal_exit_data["message"]
+
+    # 3. Card Scanned Again (Returning) -> Lookup shows OUTSIDE
+    lookup_ret_resp = client.post('/api/rfid/lookup_scan', json={"uid": "CC112233"})
+    assert lookup_ret_resp.status_code == 200
+    lookup_ret_data = lookup_ret_resp.get_json()
+    assert lookup_ret_data["current_status"] == "OUTSIDE"
+    assert lookup_ret_data["recommended_direction"] == "ENTRY"
+    assert lookup_ret_data["allowed_direction"] == "ENTRY"
+    assert lookup_ret_data["forbidden_direction"] == "EXIT"
+
+    # 4. Operator clicks [Confirm IN] (Allowed!)
+    confirm_ret_resp = client.post('/api/movements/confirm_scan', json={
+        "uid": "CC112233",
+        "direction": "ENTRY"
+    })
+    assert confirm_ret_resp.status_code == 200
+    confirm_ret_data = confirm_ret_resp.get_json()
+    assert confirm_ret_data["data"]["decision"] == "ENTRY_ALLOWED"
+    assert confirm_ret_data["data"]["movement_status"] == "INSIDE"
+    assert confirm_ret_data["data"]["outside_count"] == 0
+
+    # Verify return committed to DB
+    with app.app_context():
+        ret_mov = VehicleMovement.query.filter_by(vehicle_id=veh_id, status=MovementStatus.INSIDE).first()
+        assert ret_mov is not None
+        assert ret_mov.entry_time is not None
+
+def test_strict_binary_location_rejection(client, app, operator_user):
+    """
+    Vehicles are strictly either IN or OUT.
+    If already INSIDE -> CANNOT make ENTRY IN.
+    If already OUTSIDE -> CANNOT make EXIT OUT.
+    """
+    client.post('/login', data={'username': 'operator', 'password': 'GuardPass123!'}, follow_redirects=True)
+    with app.app_context():
+        v = Vehicle(registration_number="MH15INOUT01", auth_status=AuthStatus.AUTHORIZED)
+        db.session.add(v)
+        db.session.flush()
+        c = RFIDCard(uid="BA112233", vehicle_id=v.id, card_status=CardStatus.ACTIVE)
+        db.session.add(c)
+        db.session.commit()
+
+    # 1. Scanned vehicle starts INSIDE. Attempting ENTRY MUST FAIL!
+    res_entry_fail = client.post('/api/movements/confirm_scan', json={"uid": "BA112233", "direction": "ENTRY"})
+    assert res_entry_fail.status_code == 400
+    assert "already INSIDE" in res_entry_fail.get_json()["message"]
+
+    # 2. EXIT is permitted -> Moves OUTSIDE
+    res_exit_ok = client.post('/api/movements/confirm_scan', json={"uid": "BA112233", "direction": "EXIT"})
+    assert res_exit_ok.status_code == 200
+    assert res_exit_ok.get_json()["data"]["movement_status"] == "OUTSIDE"
+
+    # 3. Vehicle is now OUTSIDE. Attempting EXIT again MUST FAIL!
+    res_exit_fail = client.post('/api/movements/confirm_scan', json={"uid": "BA112233", "direction": "EXIT"})
+    assert res_exit_fail.status_code == 400
+    assert "already OUTSIDE" in res_exit_fail.get_json()["message"]
+
+    # 4. ENTRY is permitted -> Moves INSIDE
+    res_entry_ok = client.post('/api/movements/confirm_scan', json={"uid": "BA112233", "direction": "ENTRY"})
+    assert res_entry_ok.status_code == 200
+    assert res_entry_ok.get_json()["data"]["movement_status"] == "INSIDE"
+
+    # 5. Vehicle is now INSIDE again. Attempting ENTRY again MUST FAIL!
+    res_entry_fail2 = client.post('/api/movements/confirm_scan', json={"uid": "BA112233", "direction": "ENTRY"})
+    assert res_entry_fail2.status_code == 400
+    assert "already INSIDE" in res_entry_fail2.get_json()["message"]
+
+
+
+
 

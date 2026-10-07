@@ -137,6 +137,32 @@ def api_rfid_scan():
             "message": "Missing 'uid' in scan request."
         }), 400
 
+    require_confirmation = SystemSetting.get_value('require_guard_confirmation', '0') == '1'
+    bypass_confirm = bool(data.get('bypass_confirmation', False)) or bool(data.get('direct', False))
+
+    if require_confirmation and not bypass_confirm:
+        lookup = RFIDService.stage_pending_scan(uid, device_id=device_id)
+        if not lookup.get('success'):
+            return jsonify({
+                "success": False,
+                "decision": "ENTRY_DENIED",
+                "reason": lookup.get("reason", "UNKNOWN_RFID"),
+                "message": lookup.get("message", "Scan validation failed.")
+            }), 400
+
+        return jsonify({
+            "success": True,
+            "decision": "AWAITING_CONFIRMATION",
+            "message": "Card scan accepted. Awaiting guard confirmation in Gate Control.",
+            "vehicle_number": lookup["vehicle"]["registration_number"],
+            "vehicle_type": lookup["vehicle"]["vehicle_type"],
+            "driver_name": lookup["driver"]["name"],
+            "current_status": lookup["current_status"],
+            "recommended_direction": lookup["recommended_direction"],
+            "scan_id": lookup.get("scan_id"),
+            "event_id": event_id
+        }), 200
+
     response_data, status_code = MovementService.process_rfid_scan(
         device_id=device_id,
         api_key=api_key,
@@ -147,6 +173,25 @@ def api_rfid_scan():
     )
     
     return jsonify(response_data), status_code
+
+@rfid_bp.route('/api/rfid/lookup_scan', methods=['POST'])
+def api_lookup_scan():
+    """Look up card, vehicle, and driver details for confirmation modal."""
+    data = request.get_json(silent=True) or {}
+    uid = data.get('uid')
+    device_id = data.get('device_id', 'GATE01')
+    if not uid:
+        return jsonify({"success": False, "message": "UID is required."}), 400
+
+    result = RFIDService.stage_pending_scan(uid, device_id=device_id)
+    status_code = 200 if result.get('success') else 400
+    return jsonify(result), status_code
+
+@rfid_bp.route('/api/rfid/cancel_pending_scan', methods=['POST'])
+def api_cancel_pending_scan():
+    """Cancel and discard currently active pending scan."""
+    RFIDService.clear_pending_scan()
+    return jsonify({"success": True, "message": "Pending scan discarded."})
 
 @rfid_bp.route('/api/device/heartbeat', methods=['POST'])
 def api_device_heartbeat():

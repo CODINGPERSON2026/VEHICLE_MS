@@ -349,6 +349,136 @@ class MovementService:
             }, 400
 
     @staticmethod
+    def confirm_movement(uid: str, direction: str, driver_id: int = None, driver_name: str = None, operator_user = None, remarks: str = None, device_id: str = None):
+        """
+        Operator confirms movement direction (ENTRY or EXIT) for a scanned vehicle.
+        Explicitly commits the movement and updates inside/outside counts.
+        """
+        norm_uid = normalize_uid(uid)
+        card = RFIDCard.query.filter_by(uid=norm_uid).first()
+        if not card or not card.vehicle:
+            return False, "Card or assigned vehicle not found.", None
+
+        vehicle = card.vehicle
+        is_auth, auth_err = vehicle.is_currently_authorized()
+        if not is_auth:
+            return False, f"Vehicle authorization status: {vehicle.auth_status} ({auth_err}).", None
+
+        # Resolve driver name
+        final_driver_name = driver_name
+        if driver_id:
+            from models.driver import Driver
+            drv = db.session.get(Driver, driver_id)
+            if drv:
+                final_driver_name = drv.name
+        if not final_driver_name:
+            final_driver_name = vehicle.driver_name or vehicle.custodian_name or "Registered Driver"
+
+        # Resolve device
+        dev = Device.query.filter_by(device_id=device_id).first() if device_id else None
+        dev_id = dev.id if dev else None
+
+        from services.rfid_service import RFIDService
+        RFIDService.clear_pending_scan()
+
+        direction_upper = direction.strip().upper() if direction else GateDirection.ENTRY
+        active_outside = vehicle.get_active_outside_movement()
+        is_outside = active_outside is not None
+
+        if direction_upper == GateDirection.ENTRY:
+            # Cannot enter if vehicle is already inside!
+            if not is_outside:
+                return False, f"Vehicle '{vehicle.registration_number}' is already INSIDE the depot. Cannot record ENTRY (IN).", None
+
+            # Vehicle returned from its active trip
+            active_outside.entry_time = datetime.utcnow()
+            active_outside.status = MovementStatus.INSIDE
+            active_outside.driver_name = final_driver_name
+            if dev_id:
+                active_outside.entry_device_id = dev_id
+            if operator_user:
+                active_outside.entry_operator_id = operator_user.id
+            if remarks:
+                active_outside.remarks = (active_outside.remarks or "") + ("\n" if active_outside.remarks else "") + remarks
+            if active_outside.exit_time:
+                active_outside.duration_seconds = max(0, int((active_outside.entry_time - active_outside.exit_time).total_seconds()))
+            db.session.commit()
+            target_movement = active_outside
+
+            log_audit(
+                action=AuditAction.VEHICLE_ENTRY,
+                description=f"Confirmed ENTRY (Arrival to Depot) for {vehicle.registration_number} ({vehicle.vehicle_type}) by {operator_user.username if operator_user else 'Operator'}",
+                related_vehicle=vehicle.registration_number,
+                user=operator_user
+            )
+
+            total_vehicles = Vehicle.query.filter_by(is_active=True).count()
+            outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
+            inside_count = max(0, total_vehicles - outside_count)
+
+            return True, "Vehicle arrival confirmed. Depot entry authorized.", {
+                "decision": "ENTRY_ALLOWED",
+                "movement_status": MovementStatus.INSIDE,
+                "direction": "ENTRY",
+                "vehicle_number": vehicle.registration_number,
+                "vehicle_type": vehicle.vehicle_type,
+                "driver_name": final_driver_name,
+                "movement_id": target_movement.id,
+                "duration": target_movement.formatted_duration,
+                "inside_count": inside_count,
+                "outside_count": outside_count,
+                "timestamp": datetime.utcnow().strftime('%H:%M:%S')
+            }
+
+        elif direction_upper == GateDirection.EXIT:
+            # Cannot exit if vehicle is already outside!
+            if is_outside:
+                return False, f"Vehicle '{vehicle.registration_number}' is already OUTSIDE on an active trip. Cannot record EXIT (OUT).", None
+
+            # Outbound Exit / Dispatch
+            new_movement = VehicleMovement(
+                vehicle_id=vehicle.id,
+                rfid_card_id=card.id,
+                driver_name=final_driver_name,
+                exit_time=datetime.utcnow(),
+                entry_time=None,
+                exit_device_id=dev_id,
+                exit_operator_id=operator_user.id if operator_user else None,
+                direction=GateDirection.EXIT,
+                status=MovementStatus.OUTSIDE,
+                remarks=remarks
+            )
+            db.session.add(new_movement)
+            db.session.commit()
+
+            log_audit(
+                action=AuditAction.VEHICLE_EXIT,
+                description=f"Confirmed EXIT (Outbound Dispatch) for {vehicle.registration_number} ({vehicle.vehicle_type}) by {operator_user.username if operator_user else 'Operator'}",
+                related_vehicle=vehicle.registration_number,
+                user=operator_user
+            )
+
+            total_vehicles = Vehicle.query.filter_by(is_active=True).count()
+            outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
+            inside_count = max(0, total_vehicles - outside_count)
+
+            return True, "Vehicle exit confirmed. Outbound dispatch recorded.", {
+                "decision": "EXIT_RECORDED",
+                "movement_status": MovementStatus.OUTSIDE,
+                "direction": "EXIT",
+                "vehicle_number": vehicle.registration_number,
+                "vehicle_type": vehicle.vehicle_type,
+                "driver_name": final_driver_name,
+                "movement_id": new_movement.id,
+                "duration": "N/A",
+                "inside_count": inside_count,
+                "outside_count": outside_count,
+                "timestamp": datetime.utcnow().strftime('%H:%M:%S')
+            }
+        else:
+            return False, f"Invalid direction: '{direction}'. Expected 'ENTRY' or 'EXIT'.", None
+
+    @staticmethod
     def process_manual_movement(vehicle_id: int, direction: str, reason: str, operator_user, remarks: str = None, is_demo: bool = False):
         """
         Controlled manual entry or exit processing by an authorized operator.

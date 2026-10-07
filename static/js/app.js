@@ -38,6 +38,11 @@ function initDirectionSwitcher() {
         btnEntry.className = 'btn btn-outline-secondary';
       }
 
+      currentModalDirection = dirVal;
+      if (typeof renderModalDirectionButton === 'function') {
+        renderModalDirectionButton();
+      }
+
       const dirText = document.querySelector('#gate-decision-container strong.text-primary');
       if (dirText) dirText.textContent = dirVal === 'ENTRY' ? 'ENTRY_ONLY' : 'EXIT_ONLY';
     } catch (err) {
@@ -118,10 +123,13 @@ let isSelectingDriver = false;
 let decisionResetTimer = null;
 let barrierTimer = null;
 let isFirstPoll = true;
+let currentPendingScan = null;
+let currentPendingScanId = null;
+let scanConfirmationModalInstance = null;
 
 function initGateControlLivePolling() {
-  const gateBox = document.getElementById('gate-decision-container');
-  if (!gateBox) return;
+  const isAuth = !!document.getElementById('app-sidebar') || !!document.querySelector('.top-navbar') || !!document.getElementById('gate-decision-container');
+  if (!isAuth) return;
 
   const pollInterval = 1200; // Poll every 1.2s for rapid response
   setInterval(pollGateFeed, pollInterval);
@@ -140,6 +148,30 @@ async function pollGateFeed() {
     const outsideCounter = document.getElementById('live-outside-count');
     if (outsideCounter && data.outside_count !== undefined) {
       outsideCounter.textContent = data.outside_count;
+    }
+
+    // Update Dashboard big counters if present (e.g. on http://192.168.1.39:5000/)
+    const dashOutside = document.getElementById('stat-vehicles-outside');
+    if (dashOutside && data.outside_count !== undefined) {
+      dashOutside.textContent = data.outside_count;
+    }
+    const dashInside = document.getElementById('stat-vehicles-inside');
+    if (dashInside && data.inside_count !== undefined) {
+      dashInside.textContent = data.inside_count;
+    }
+
+    // Check for pending RFID scan awaiting guard confirmation (e.g. from ESP32 hardware reader)
+    if (data.pending_scan && data.pending_scan.scan_id) {
+      if (currentPendingScanId !== data.pending_scan.scan_id) {
+        openScanConfirmationModal(data.pending_scan);
+      }
+    } else if (!data.pending_scan && currentPendingScanId) {
+      const btnIn = document.getElementById('btn-confirm-in');
+      if (btnIn && !btnIn.disabled) {
+        currentPendingScanId = null;
+        currentPendingScan = null;
+        closeScanConfirmationModal();
+      }
     }
 
     if (!data.last_event) {
@@ -526,23 +558,26 @@ function initRFIDEnrollmentListener() {
 async function triggerTestScan(uid) {
   if (!uid) return;
   try {
-    const res = await fetch('/api/rfid/scan', {
+    const res = await fetch('/api/rfid/lookup_scan', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         uid: uid,
-        device_id: 'GATE01',
-        api_key: 'dev_gate01_secret'
+        device_id: 'GATE01'
       })
     });
     const data = await res.json();
-    console.log('RFID Scan result:', data);
-    // Poll immediately to reflect in live feed
-    pollGateFeed();
+    if (res.ok && data.success) {
+      openScanConfirmationModal(data);
+    } else {
+      alert(`Scan Verification Failed: ${data.message || 'Tag not authorized'}`);
+      playChime(false);
+    }
   } catch (err) {
     console.error('Test scan failed:', err);
+    alert('Communication error with gate reader.');
   }
 }
 
@@ -554,4 +589,390 @@ function triggerManualTestScan() {
   }
   const uid = input.value.trim();
   triggerTestScan(uid);
+}
+
+let currentModalDirection = 'ENTRY';
+
+function getActiveNavbarDirection() {
+  const btnExit = document.getElementById('btn-nav-dir-exit');
+  if (btnExit && (btnExit.classList.contains('btn-info') || btnExit.classList.contains('btn-warning') || btnExit.classList.contains('btn-danger') || btnExit.classList.contains('active'))) {
+    return 'EXIT';
+  }
+  const btnEntry = document.getElementById('btn-nav-dir-entry');
+  if (btnEntry && (btnEntry.classList.contains('btn-success') || btnEntry.classList.contains('active'))) {
+    return 'ENTRY';
+  }
+  return 'ENTRY';
+}
+
+function renderModalDirectionButton() {
+  const wrapIn = document.getElementById('wrapper-confirm-in');
+  const wrapOut = document.getElementById('wrapper-confirm-out');
+  const conflictAlert = document.getElementById('modal-direction-conflict-alert');
+  const conflictMsg = document.getElementById('modal-direction-conflict-msg');
+  const hintElem = document.getElementById('modal-direction-hint');
+
+  if (!currentPendingScan) return;
+
+  const currentStatus = currentPendingScan.current_status; // "INSIDE" or "OUTSIDE"
+  const isInside = currentStatus === 'INSIDE';
+  const activeNavbarDir = getActiveNavbarDirection(); // "ENTRY" or "EXIT"
+  const vehPlate = (currentPendingScan.vehicle && currentPendingScan.vehicle.registration_number) || 'Vehicle';
+
+  if (isInside) {
+    // 🏢 VEHICLE IS CURRENTLY INSIDE THE DEPOT
+    // CANNOT DO ENTRY (IN)! Only EXIT (OUT) is permitted.
+    if (activeNavbarDir === 'ENTRY') {
+      // Guard is on ENTRY tab, but vehicle is ALREADY INSIDE!
+      if (conflictAlert) {
+        conflictAlert.classList.remove('d-none');
+        conflictAlert.classList.add('d-flex');
+      }
+      if (conflictMsg) {
+        conflictMsg.innerHTML = `<strong>ALREADY INSIDE:</strong> <code>${vehPlate}</code> is already in the depot. <strong>ENTRY (IN) is blocked.</strong> Only EXIT (OUT) is allowed.`;
+      }
+      if (hintElem) {
+        hintElem.innerHTML = `<span class="text-danger fw-bold"><i class="fa-solid fa-ban me-1"></i>ENTRY Blocked (Already Inside)</span>`;
+      }
+    } else {
+      if (conflictAlert) {
+        conflictAlert.classList.add('d-none');
+        conflictAlert.classList.remove('d-flex');
+      }
+      if (hintElem) {
+        hintElem.innerHTML = `<span class="text-success fw-semibold"><i class="fa-solid fa-check-circle me-1"></i>Inside Depot &bull; Ready to Dispatch OUT</span>`;
+      }
+    }
+
+    // Since vehicle is INSIDE, only OUT is possible!
+    if (wrapIn) wrapIn.style.display = 'none';
+    if (wrapOut) wrapOut.style.display = 'block';
+
+  } else {
+    // 🚗 VEHICLE IS CURRENTLY OUTSIDE ON A TRIP
+    // CANNOT DO EXIT (OUT)! Only ENTRY (IN) is permitted.
+    if (activeNavbarDir === 'EXIT') {
+      // Guard is on EXIT tab, but vehicle is ALREADY OUTSIDE!
+      if (conflictAlert) {
+        conflictAlert.classList.remove('d-none');
+        conflictAlert.classList.add('d-flex');
+      }
+      if (conflictMsg) {
+        conflictMsg.innerHTML = `<strong>ALREADY OUTSIDE:</strong> <code>${vehPlate}</code> is currently outside on a trip. <strong>EXIT (OUT) is blocked.</strong> Only ENTRY (IN) is allowed.`;
+      }
+      if (hintElem) {
+        hintElem.innerHTML = `<span class="text-danger fw-bold"><i class="fa-solid fa-ban me-1"></i>EXIT Blocked (Already Outside)</span>`;
+      }
+    } else {
+      if (conflictAlert) {
+        conflictAlert.classList.add('d-none');
+        conflictAlert.classList.remove('d-flex');
+      }
+      if (hintElem) {
+        hintElem.innerHTML = `<span class="text-success fw-semibold"><i class="fa-solid fa-check-circle me-1"></i>On Outside Trip &bull; Ready to Return IN</span>`;
+      }
+    }
+
+    // Since vehicle is OUTSIDE, only IN is possible!
+    if (wrapIn) wrapIn.style.display = 'block';
+    if (wrapOut) wrapOut.style.display = 'none';
+  }
+}
+
+function toggleModalDirection() {
+  renderModalDirectionButton();
+}
+
+// ---------------- Scan Confirmation Modal Logic ---------------- //
+function openScanConfirmationModal(scanData) {
+  if (!scanData || !scanData.vehicle) return;
+
+  currentPendingScan = scanData;
+  currentPendingScanId = scanData.scan_id || scanData.uid;
+
+  const modalElem = document.getElementById('scanConfirmationModal');
+  if (!modalElem) return;
+
+  // Sync with active navbar direction tab (ENTRY vs EXIT)
+  currentModalDirection = getActiveNavbarDirection();
+  renderModalDirectionButton();
+
+  // Telemetry: UID
+  const uidElem = document.getElementById('modal-confirm-uid');
+  if (uidElem) uidElem.textContent = `UID: ${scanData.uid}`;
+
+  // Vehicle Details
+  const plateElem = document.getElementById('modal-confirm-plate');
+  if (plateElem) plateElem.textContent = scanData.vehicle.registration_number || 'UNKNOWN';
+
+  const typeElem = document.getElementById('modal-confirm-type');
+  if (typeElem) typeElem.textContent = scanData.vehicle.vehicle_type || 'N/A';
+
+  const authBadge = document.getElementById('modal-confirm-auth-badge');
+  if (authBadge) {
+    const isAuth = scanData.vehicle.auth_status === 'AUTHORIZED';
+    authBadge.className = isAuth ? 'badge bg-success px-3 py-1 fs-6' : 'badge bg-danger px-3 py-1 fs-6';
+    authBadge.textContent = scanData.vehicle.auth_status || 'NOT AUTHORIZED';
+  }
+
+  // Current Location Status Pill
+  const statusPill = document.getElementById('modal-confirm-status-pill');
+  if (statusPill) {
+    const isOutside = scanData.current_status === 'OUTSIDE';
+    if (isOutside) {
+      statusPill.className = 'badge bg-warning text-dark px-3 py-1 fs-6 fw-bold shadow-sm';
+      statusPill.innerHTML = '<i class="fa-solid fa-road me-1"></i>CURRENTLY OUTSIDE (Can only Enter IN)';
+    } else {
+      statusPill.className = 'badge bg-success text-white px-3 py-1 fs-6 fw-bold shadow-sm';
+      statusPill.innerHTML = '<i class="fa-solid fa-warehouse me-1"></i>CURRENTLY INSIDE (Can only Exit OUT)';
+    }
+  }
+
+  // Driver Details
+  const driverNameElem = document.getElementById('modal-confirm-driver-name');
+  if (driverNameElem) driverNameElem.textContent = scanData.driver.name || 'Registered Driver';
+
+  const driverRankElem = document.getElementById('modal-confirm-driver-rank');
+  if (driverRankElem) driverRankElem.textContent = scanData.driver.rank || scanData.driver.designation || 'Staff Driver';
+
+  const driverArmyElem = document.getElementById('modal-confirm-driver-army');
+  if (driverArmyElem) driverArmyElem.textContent = scanData.driver.armynumber ? `Army No: ${scanData.driver.armynumber}` : (scanData.driver.designation || '');
+
+  const driverMobileElem = document.getElementById('modal-confirm-driver-mobile');
+  if (driverMobileElem) driverMobileElem.textContent = scanData.driver.mobile || 'N/A';
+
+  // Driver Selector
+  const driverSelect = document.getElementById('modal-confirm-driver-select');
+  if (driverSelect) {
+    driverSelect.innerHTML = `<option value="">-- Keep Assigned Driver (${scanData.driver.name}) --</option>`;
+    if (scanData.pool_drivers && Array.isArray(scanData.pool_drivers)) {
+      scanData.pool_drivers.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.dataset.driverName = d.name;
+        opt.dataset.driverRank = d.rank || '';
+        opt.dataset.driverArmy = d.armynumber || '';
+        opt.dataset.driverMobile = d.mobile || '';
+        opt.textContent = `${d.name} (${d.rank || d.armynumber || 'Driver'})`;
+        driverSelect.appendChild(opt);
+      });
+    }
+  }
+
+  // Close driver change collapse if open
+  const collapseEl = document.getElementById('collapseDriverSelect');
+  if (collapseEl && collapseEl.classList.contains('show')) {
+    const bsCollapse = bootstrap.Collapse.getInstance(collapseEl);
+    if (bsCollapse) bsCollapse.hide();
+  }
+
+  // Reset button states
+  const btnIn = document.getElementById('btn-confirm-in');
+  if (btnIn) {
+    btnIn.disabled = false;
+    btnIn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket fs-4"></i><span>CONFIRM IN (Arrival to Depot)</span>';
+  }
+  const btnOut = document.getElementById('btn-confirm-out');
+  if (btnOut) {
+    btnOut.disabled = false;
+    btnOut.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket fs-4"></i><span>CONFIRM OUT (Outbound Dispatch)</span>';
+  }
+
+  const remarksInput = document.getElementById('modal-confirm-remarks');
+  if (remarksInput) remarksInput.value = '';
+
+  scanConfirmationModalInstance = bootstrap.Modal.getOrCreateInstance(modalElem);
+  scanConfirmationModalInstance.show();
+  playChime(true);
+}
+
+function onConfirmDriverChanged(driverId) {
+  if (!currentPendingScan) return;
+  const select = document.getElementById('modal-confirm-driver-select');
+  const nameElem = document.getElementById('modal-confirm-driver-name');
+  const rankElem = document.getElementById('modal-confirm-driver-rank');
+  const armyElem = document.getElementById('modal-confirm-driver-army');
+  const mobileElem = document.getElementById('modal-confirm-driver-mobile');
+
+  if (!driverId) {
+    // Reset to default
+    if (nameElem) nameElem.textContent = currentPendingScan.driver.name;
+    if (rankElem) rankElem.textContent = currentPendingScan.driver.rank || 'Staff Driver';
+    if (armyElem) armyElem.textContent = currentPendingScan.driver.armynumber ? `Army No: ${currentPendingScan.driver.armynumber}` : '';
+    if (mobileElem) mobileElem.textContent = currentPendingScan.driver.mobile || 'N/A';
+    return;
+  }
+
+  const selectedOpt = select.options[select.selectedIndex];
+  if (selectedOpt) {
+    if (nameElem) nameElem.textContent = selectedOpt.dataset.driverName;
+    if (rankElem) rankElem.textContent = selectedOpt.dataset.driverRank || 'Pool Driver';
+    if (armyElem) armyElem.textContent = selectedOpt.dataset.driverArmy ? `Army No: ${selectedOpt.dataset.driverArmy}` : '';
+    if (mobileElem) mobileElem.textContent = selectedOpt.dataset.driverMobile || 'N/A';
+  }
+}
+
+async function confirmScan(direction) {
+  if (!currentPendingScan) return;
+
+  const isInside = currentPendingScan.current_status === 'INSIDE';
+  const vehPlate = (currentPendingScan.vehicle && currentPendingScan.vehicle.registration_number) || 'Vehicle';
+
+  if (isInside && direction === 'ENTRY') {
+    alert(`Action Not Allowed: ${vehPlate} is already INSIDE the depot.\nCannot record ENTRY (IN). Only EXIT (OUT) is permitted.`);
+    return;
+  }
+  if (!isInside && direction === 'EXIT') {
+    alert(`Action Not Allowed: ${vehPlate} is already OUTSIDE on a trip.\nCannot record EXIT (OUT). Only ENTRY (IN) is permitted.`);
+    return;
+  }
+
+  const btnIn = document.getElementById('btn-confirm-in');
+  const btnOut = document.getElementById('btn-confirm-out');
+  const targetBtn = direction === 'ENTRY' ? btnIn : btnOut;
+
+  if (btnIn) btnIn.disabled = true;
+  if (btnOut) btnOut.disabled = true;
+
+  if (targetBtn) {
+    targetBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Confirming...';
+  }
+
+  const driverSelect = document.getElementById('modal-confirm-driver-select');
+  let selectedDriverId = null;
+  let selectedDriverName = null;
+
+  if (driverSelect && driverSelect.value) {
+    selectedDriverId = driverSelect.value;
+    const selectedOpt = driverSelect.options[driverSelect.selectedIndex];
+    selectedDriverName = selectedOpt ? selectedOpt.dataset.driverName : null;
+  } else {
+    selectedDriverName = currentPendingScan.driver.name;
+    selectedDriverId = currentPendingScan.driver.id;
+  }
+
+  const remarksInput = document.getElementById('modal-confirm-remarks');
+  const remarks = remarksInput ? remarksInput.value.trim() : '';
+
+  try {
+    const res = await fetch('/api/movements/confirm_scan', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        uid: currentPendingScan.uid,
+        direction: direction,
+        driver_id: selectedDriverId,
+        driver_name: selectedDriverName,
+        remarks: remarks,
+        device_id: currentPendingScan.device_id || 'GATE01'
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      alert(`Confirmation Failed: ${data.message || 'Unknown error'}`);
+      if (btnIn) btnIn.disabled = false;
+      if (btnOut) btnOut.disabled = false;
+      return;
+    }
+
+    // Success: Hide confirmation modal
+    closeScanConfirmationModal();
+
+    const result = data.data;
+
+    // Update inside & outside counters immediately (Gate Control)
+    const insideCounter = document.getElementById('live-inside-count');
+    if (insideCounter && result.inside_count !== undefined) {
+      insideCounter.textContent = result.inside_count;
+    }
+    const outsideCounter = document.getElementById('live-outside-count');
+    if (outsideCounter && result.outside_count !== undefined) {
+      outsideCounter.textContent = result.outside_count;
+    }
+
+    // Update Dashboard big counters immediately (e.g. on http://192.168.1.39:5000/)
+    const dashOutside = document.getElementById('stat-vehicles-outside');
+    if (dashOutside && result.outside_count !== undefined) {
+      dashOutside.textContent = result.outside_count;
+    }
+    const dashInside = document.getElementById('stat-vehicles-inside');
+    if (dashInside && result.inside_count !== undefined) {
+      dashInside.textContent = result.inside_count;
+    }
+
+    // Update Main Gate Decision Banner
+    const decisionBox = document.getElementById('gate-decision-box');
+    const titleElem = document.getElementById('decision-title');
+    const plateElem = document.getElementById('decision-plate');
+    const typeElem = document.getElementById('decision-type');
+    const driverElem = document.getElementById('decision-driver');
+    const uidElem = document.getElementById('decision-uid');
+    const msgElem = document.getElementById('decision-message');
+    const timeElem = document.getElementById('decision-time');
+
+    if (decisionBox) {
+      if (result.direction === 'EXIT') {
+        decisionBox.className = 'gate-decision-box EXIT';
+        if (titleElem) titleElem.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket me-2"></i>EXIT RECORDED - OUTBOUND DISPATCH';
+        if (msgElem) msgElem.textContent = `Vehicle Dispatched (OUTSIDE) with Driver: ${result.driver_name}! Barrier Opening...`;
+      } else {
+        decisionBox.className = 'gate-decision-box ALLOWED';
+        if (titleElem) titleElem.innerHTML = '<i class="fa-solid fa-circle-check me-2"></i>ENTRY ALLOWED - RETURNED TO DEPOT';
+        if (msgElem) msgElem.textContent = `Arrival Confirmed for ${result.driver_name} (Duration: ${result.duration || 'N/A'})! Barrier Opening...`;
+      }
+
+      if (plateElem) plateElem.textContent = result.vehicle_number;
+      if (typeElem) typeElem.textContent = result.vehicle_type;
+      if (driverElem) driverElem.innerHTML = `<span class="badge bg-success px-2 py-1"><i class="fa-solid fa-user-check me-1"></i>${result.driver_name}</span>`;
+      if (uidElem) uidElem.textContent = currentPendingScan ? currentPendingScan.uid : '-';
+      if (timeElem) timeElem.textContent = result.timestamp || '';
+    }
+
+    // Open barrier actuator
+    const delayElem = document.getElementById('barrier-auto-delay');
+    const autoCloseSec = delayElem ? (parseInt(delayElem.textContent, 10) || 4) : 4;
+    triggerBarrierOpen(autoCloseSec);
+
+    // Play triumph chime
+    playChime(true);
+
+    // Reset back to standby after auto close delay + 2.5s
+    if (decisionResetTimer) clearTimeout(decisionResetTimer);
+    decisionResetTimer = setTimeout(() => {
+      resetGateDecisionToStandby();
+    }, (autoCloseSec + 2.5) * 1000);
+
+    currentPendingScan = null;
+    currentPendingScanId = null;
+
+    // Trigger poll update
+    pollGateFeed();
+
+  } catch (err) {
+    console.error('Error confirming scan:', err);
+    alert('Failed to connect to gate server. Please try again.');
+    if (btnIn) btnIn.disabled = false;
+    if (btnOut) btnOut.disabled = false;
+  }
+}
+
+async function cancelPendingScan() {
+  try {
+    await fetch('/api/rfid/cancel_pending_scan', { method: 'POST' });
+  } catch (e) {}
+  currentPendingScan = null;
+  currentPendingScanId = null;
+  closeScanConfirmationModal();
+}
+
+function closeScanConfirmationModal() {
+  const modalElem = document.getElementById('scanConfirmationModal');
+  if (modalElem) {
+    const modal = bootstrap.Modal.getInstance(modalElem);
+    if (modal) modal.hide();
+  }
 }

@@ -9,6 +9,10 @@ class Config:
         'DATABASE_URL', 'mysql+pymysql://root:qaz123QAZ%21%40%23@localhost/vehicle_management'
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'pool_recycle': 280,
+        'pool_pre_ping': True
+    }
     
     # Session security
     PERMANENT_SESSION_LIFETIME = timedelta(minutes=int(os.environ.get('SESSION_TIMEOUT_MINUTES', 60)))
