@@ -57,9 +57,11 @@ def assign_card():
         v_id = None
     elif assign_type == 'vehicle':
         d_id = None
-
-    if not d_id and not v_id:
-        flash('Please select either a Driver or a Vehicle to assign this RFID card.', 'warning')
+    elif assign_type == 'unassigned':
+        d_id = None
+        v_id = None
+    elif not d_id and not v_id:
+        flash('Please select either a Driver, a Vehicle, or Unassigned to register this RFID card.', 'warning')
         return redirect(url_for('rfid.list_cards'))
 
     success, msg, card = RFIDService.assign_card(
@@ -154,7 +156,15 @@ def api_rfid_scan():
             "message": "Missing 'uid' in scan request."
         }), 400
 
-    require_confirmation = SystemSetting.get_value('require_guard_confirmation', '0') == '1'
+    # Capture card for Live Hardware Enrollment Modal immediately
+    norm_uid = normalize_uid(uid)
+    if norm_uid:
+        try:
+            RFIDService.capture_enrollment_scan(norm_uid, device_id)
+        except Exception:
+            pass
+
+    require_confirmation = SystemSetting.get_value('require_guard_confirmation', '1') != '0'
     bypass_confirm = bool(data.get('bypass_confirmation', False)) or bool(data.get('direct', False))
 
     if require_confirmation and not bypass_confirm:
@@ -269,7 +279,6 @@ def api_enroll_scan():
     return jsonify({"success": success, "message": msg, "uid": normalize_uid(uid)})
 
 @rfid_bp.route('/api/rfid/latest_enrollment', methods=['GET'])
-@login_required
 def api_latest_enrollment():
     """Frontend polls this to receive newly scanned RFID tag in real-time."""
     enrollment = RFIDService.get_latest_enrollment()

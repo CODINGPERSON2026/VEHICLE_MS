@@ -19,6 +19,7 @@ def init_db(app):
 
         db.create_all()
         seed_default_settings()
+        seed_default_devices()
 
 
 def seed_default_settings():
@@ -32,7 +33,8 @@ def seed_default_settings():
         'device_heartbeat_timeout': ('35', 'Seconds before an inactive device is marked OFFLINE'),
         'barrier_auto_close_delay': ('4', 'Seconds to simulate barrier gate open before auto-closing'),
         'anpr_confidence_threshold': ('80.0', 'Minimum confidence score (%) for ANPR auto-match'),
-        'dashboard_refresh_interval': ('1', 'Dashboard auto-refresh interval in seconds')
+        'dashboard_refresh_interval': ('1', 'Dashboard auto-refresh interval in seconds'),
+        'require_guard_confirmation': ('1', 'Require guard confirmation modal on RFID scan (1=Yes, 0=Auto-process)')
     }
 
     for key, (val, desc) in defaults.items():
@@ -45,3 +47,26 @@ def seed_default_settings():
         db.session.commit()
     except Exception:
         db.session.rollback()
+
+
+def seed_default_devices():
+    """Seed default ESP32 gate hardware device (GATE01) if not present."""
+    from models.device import Device, DeviceType, DeviceStatus, DeviceDirection
+
+    dev = Device.query.filter_by(device_id='GATE01').first()
+    if not dev:
+        dev = Device(
+            device_id='GATE01',
+            device_name='Main Gate RFID Reader (ESP32)',
+            device_type=DeviceType.ESP32_RFID,
+            gate='Main Gate',
+            direction=DeviceDirection.BOTH,
+            status=DeviceStatus.ONLINE,
+            is_active=True
+        )
+        dev.set_api_key('dev_gate01_secret')
+        db.session.add(dev)
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()

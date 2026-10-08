@@ -31,6 +31,17 @@ class MovementService:
             )
             db.session.add(DeniedAttempt_record)
             db.session.commit()
+            # Buffer unregistered UID for Live Enrollment Mode
+            norm_uid = normalize_uid(uid)
+            if norm_uid:
+                try:
+                    from services.rfid_service import RFIDService
+                    card = RFIDCard.query.filter_by(uid=norm_uid).first()
+                    if not card:
+                        RFIDService.capture_enrollment_scan(norm_uid, device_id)
+                except Exception:
+                    pass
+
             return {
                 "success": False,
                 "decision": "ENTRY_DENIED",
@@ -147,6 +158,8 @@ class MovementService:
                     (Vehicle.armynumber == card.driver.armynumber if card.driver.armynumber else False) |
                     (Vehicle.driver_name == card.driver.name)
                 ).first()
+                if not vehicle:
+                    vehicle = Vehicle.query.filter_by(is_active=True).first()
 
         if not vehicle or not vehicle.is_active:
             MovementService._log_denied(

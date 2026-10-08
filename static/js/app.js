@@ -509,6 +509,7 @@ function playAttentionSound() {
 
 // ---------------- RFID Card Enrollment Listener ---------------- //
 let enrollmentInterval = null;
+let lastCapturedEnrollmentUid = null;
 
 function initRFIDEnrollmentListener() {
   const enrollModal = document.getElementById('enrollCardModal');
@@ -520,15 +521,29 @@ function initRFIDEnrollmentListener() {
       if (!res.ok) return;
       const data = await res.json();
       if (data.active && data.data && data.data.uid) {
+        const uid = data.data.uid.toUpperCase();
         const uidInput = document.getElementById('assign-uid-input');
         const statusText = document.getElementById('enroll-listener-status');
-        if (uidInput && uidInput.value !== data.data.uid) {
-          uidInput.value = data.data.uid;
+        const driverSelect = document.getElementById('driverSelect_enroll');
+
+        if (uidInput && uidInput.value !== uid) {
+          uidInput.value = uid;
           uidInput.classList.add('is-valid');
-          setTimeout(() => uidInput.classList.remove('is-valid'), 2500);
+          
+          // Audio confirmation
+          if (lastCapturedEnrollmentUid !== uid) {
+            lastCapturedEnrollmentUid = uid;
+            playChime();
+          }
+
+          // Auto-focus driver select for fast assignment
+          if (driverSelect && !driverSelect.value) {
+            driverSelect.focus();
+          }
         }
+
         if (statusText) {
-          statusText.innerHTML = `<span class="text-success fw-bold"><i class="fa-solid fa-circle-check me-1"></i>Tag Captured: ${data.data.uid}</span> <span class="badge bg-secondary-subtle text-secondary ms-1">${data.data.device_id || 'ESP32'}</span>`;
+          statusText.innerHTML = `<span class="text-success fw-bold"><i class="fa-solid fa-circle-check me-1"></i>Tag Captured: ${uid}</span> <span class="badge bg-success text-white ms-2"><i class="fa-solid fa-satellite-dish me-1"></i>${data.data.device_id || 'GATE01'}</span>`;
         }
       }
     } catch (err) {}
@@ -537,13 +552,15 @@ function initRFIDEnrollmentListener() {
   enrollModal.addEventListener('shown.bs.modal', () => {
     const statusText = document.getElementById('enroll-listener-status');
     const uidInput = document.getElementById('assign-uid-input');
+    lastCapturedEnrollmentUid = null;
+
     if (statusText && (!uidInput || !uidInput.value)) {
       statusText.innerHTML = '<span class="pulse-dot pulse-green me-1"></span>Waiting for card scan on ESP32 reader...';
     }
 
-    // Check immediately, then poll every 1.5s
+    // Check immediately, then poll every 500ms for instant auto-fill
     pollEnrollment();
-    enrollmentInterval = setInterval(pollEnrollment, 1500);
+    enrollmentInterval = setInterval(pollEnrollment, 500);
   });
 
   enrollModal.addEventListener('hidden.bs.modal', () => {

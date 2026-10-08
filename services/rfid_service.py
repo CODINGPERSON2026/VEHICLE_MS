@@ -254,9 +254,7 @@ class RFIDService:
         if not norm_uid:
             return False, "RFID UID cannot be empty.", None
 
-        if not vehicle_id and not driver_id:
-            return False, "Please select either a Driver or a Vehicle to assign this RFID card.", None
-
+        # If vehicle_id and driver_id are None, card is registered as Unassigned (Inventory)
         vehicle = db.session.get(Vehicle, vehicle_id) if vehicle_id else None
         driver = db.session.get(Driver, driver_id) if driver_id else None
 
@@ -295,7 +293,7 @@ class RFIDService:
                 target_parts.append(f"driver '{driver.name}'")
             if vehicle:
                 target_parts.append(f"vehicle '{vehicle.registration_number}'")
-            target_desc = " and ".join(target_parts)
+            target_desc = " and ".join(target_parts) if target_parts else "Inventory (Unassigned)"
 
             log_audit(
                 action=AuditAction.RFID_ASSIGN,
@@ -303,7 +301,7 @@ class RFIDService:
                 related_vehicle=vehicle.registration_number if vehicle else None,
                 user=user
             )
-            return True, f"Card '{norm_uid}' assigned to {target_desc} successfully.", card
+            return True, f"Card '{norm_uid}' registered/assigned to {target_desc} successfully.", card
 
         new_card = RFIDCard(
             uid=norm_uid,
@@ -326,15 +324,15 @@ class RFIDService:
             target_parts.append(f"driver '{driver.name}'")
         if vehicle:
             target_parts.append(f"vehicle '{vehicle.registration_number}'")
-        target_desc = " and ".join(target_parts)
+        target_desc = " and ".join(target_parts) if target_parts else "Inventory (Unassigned)"
 
         log_audit(
             action=AuditAction.RFID_ASSIGN,
-            description=f"Registered & assigned RFID '{norm_uid}' to {target_desc}",
+            description=f"Registered RFID '{norm_uid}' in {target_desc}",
             related_vehicle=vehicle.registration_number if vehicle else None,
             user=user
         )
-        return True, f"Card '{norm_uid}' registered and assigned to {target_desc} successfully.", new_card
+        return True, f"Card '{norm_uid}' registered successfully as {target_desc}.", new_card
 
     @staticmethod
     def update_card_status(card_id: int, new_status: str, remarks: str = None, user=None):

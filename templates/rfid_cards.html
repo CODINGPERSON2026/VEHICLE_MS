@@ -213,49 +213,34 @@
               <input type="text" class="form-control font-monospace text-uppercase fw-bold text-primary fs-5" id="assign-uid-input" name="uid" placeholder="Tap Card On Reader..." required>
             </div>
 
-            <!-- Target Selection Toggle -->
+            <!-- Target: ONLY Driver Badge -->
+            <input type="hidden" name="assign_type" value="driver">
+
             <div class="col-12">
               <label class="form-label small fw-bold text-secondary text-uppercase mb-2">Assign This RFID Card To *</label>
-              <div class="d-flex gap-4 p-2 bg-light rounded-3 border">
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="assign_type" id="assignTypeDriver_enroll" value="driver" checked onchange="toggleAssignTarget('enroll')">
-                  <label class="form-check-label fw-semibold cursor-pointer" for="assignTypeDriver_enroll">
-                    <i class="fa-solid fa-id-badge text-success me-1"></i>Driver (Personal Driver Badge)
-                  </label>
+              <div class="p-3 bg-success-subtle border border-success-subtle rounded-3 d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="badge bg-success fs-6 px-3 py-2">
+                    <i class="fa-solid fa-id-badge me-1"></i>DRIVER BADGE
+                  </span>
+                  <span class="fw-semibold text-dark">Personal RFID Card for Driver</span>
                 </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="assign_type" id="assignTypeVehicle_enroll" value="vehicle" onchange="toggleAssignTarget('enroll')">
-                  <label class="form-check-label fw-semibold cursor-pointer" for="assignTypeVehicle_enroll">
-                    <i class="fa-solid fa-truck text-primary me-1"></i>Vehicle (Vehicle Windshield Tag)
-                  </label>
-                </div>
+                <small class="text-success fw-bold"><i class="fa-solid fa-check-circle me-1"></i>Ready to Assign</small>
               </div>
             </div>
 
-            <!-- Driver Dropdown -->
+            <!-- Driver Dropdown (Always Visible & Required) -->
             <div class="col-md-12" id="driverSelectWrapper_enroll">
-              <label class="form-label small fw-semibold">Select Driver from Driver Master *</label>
-              <select class="form-select" name="driver_id" id="driverSelect_enroll" required>
-                <option value="">-- Select Registered Driver --</option>
+              <label class="form-label small fw-bold text-secondary text-uppercase">Select Driver from Driver Master *</label>
+              <select class="form-select form-select-lg fw-semibold" name="driver_id" id="driverSelect_enroll" required>
+                <option value="">-- Choose Driver to Assign RFID Card --</option>
                 {% for d in drivers %}
                 <option value="{{ d.id }}">
                   {{ d.name }}{% if d.driver_rank %} ({{ d.driver_rank }}){% endif %}{% if d.armynumber %} [Army: {{ d.armynumber }}]{% endif %}{% if d.company %} - Coy: {{ d.company }}{% endif %}
                 </option>
                 {% endfor %}
               </select>
-              <div class="form-text small">Links this RFID card to the driver's database record.</div>
-            </div>
-
-            <!-- Vehicle Dropdown -->
-            <div class="col-md-12 d-none" id="vehicleSelectWrapper_enroll">
-              <label class="form-label small fw-semibold">Select Vehicle *</label>
-              <select class="form-select" name="vehicle_id" id="vehicleSelect_enroll">
-                <option value="">-- Select Registered Vehicle --</option>
-                {% for v in vehicles %}
-                <option value="{{ v.id }}">{{ v.registration_number }} ({{ v.vehicle_type }})</option>
-                {% endfor %}
-              </select>
-              <div class="form-text small">Links this RFID card to the vehicle's database record.</div>
+              <div class="form-text small">Select the driver who will carry this RFID card badge.</div>
             </div>
 
             <div class="col-md-6">
@@ -298,7 +283,7 @@
           <!-- Target Selection Toggle -->
           <div class="mb-3">
             <label class="form-label small fw-bold text-secondary text-uppercase mb-2">Assign This RFID Card To *</label>
-            <div class="d-flex gap-3 p-2 bg-light rounded-3 border">
+            <div class="d-flex flex-wrap gap-3 p-2 bg-light rounded-3 border">
               <div class="form-check">
                 <input class="form-check-input" type="radio" name="assign_type" id="assignTypeDriver_manual" value="driver" checked onchange="toggleAssignTarget('manual')">
                 <label class="form-check-label fw-semibold cursor-pointer" for="assignTypeDriver_manual">
@@ -309,6 +294,12 @@
                 <input class="form-check-input" type="radio" name="assign_type" id="assignTypeVehicle_manual" value="vehicle" onchange="toggleAssignTarget('manual')">
                 <label class="form-check-label fw-semibold cursor-pointer" for="assignTypeVehicle_manual">
                   <i class="fa-solid fa-truck text-primary me-1"></i>Vehicle (Vehicle Tag)
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="assign_type" id="assignTypeUnassigned_manual" value="unassigned" onchange="toggleAssignTarget('manual')">
+                <label class="form-check-label fw-semibold cursor-pointer" for="assignTypeUnassigned_manual">
+                  <i class="fa-solid fa-id-card text-secondary me-1"></i>Unassigned (Tag Only)
                 </label>
               </div>
             </div>
@@ -358,7 +349,8 @@
 
 <script>
 function toggleAssignTarget(prefix) {
-  const isDriver = document.getElementById('assignTypeDriver_' + prefix).checked;
+  const isDriver = document.getElementById('assignTypeDriver_' + prefix)?.checked;
+  const isVehicle = document.getElementById('assignTypeVehicle_' + prefix)?.checked;
   const driverWrap = document.getElementById('driverSelectWrapper_' + prefix);
   const vehicleWrap = document.getElementById('vehicleSelectWrapper_' + prefix);
   const driverSel = document.getElementById('driverSelect_' + prefix);
@@ -367,23 +359,19 @@ function toggleAssignTarget(prefix) {
   if (isDriver) {
     if (driverWrap) driverWrap.classList.remove('d-none');
     if (vehicleWrap) vehicleWrap.classList.add('d-none');
-    if (driverSel) {
-      driverSel.required = true;
-    }
-    if (vehicleSel) {
-      vehicleSel.required = false;
-      vehicleSel.value = '';
-    }
-  } else {
+    if (driverSel) driverSel.required = true;
+    if (vehicleSel) { vehicleSel.required = false; vehicleSel.value = ''; }
+  } else if (isVehicle) {
     if (driverWrap) driverWrap.classList.add('d-none');
     if (vehicleWrap) vehicleWrap.classList.remove('d-none');
-    if (driverSel) {
-      driverSel.required = false;
-      driverSel.value = '';
-    }
-    if (vehicleSel) {
-      vehicleSel.required = true;
-    }
+    if (driverSel) { driverSel.required = false; driverSel.value = ''; }
+    if (vehicleSel) vehicleSel.required = true;
+  } else {
+    // Unassigned (Register card directly into database)
+    if (driverWrap) driverWrap.classList.add('d-none');
+    if (vehicleWrap) vehicleWrap.classList.add('d-none');
+    if (driverSel) { driverSel.required = false; driverSel.value = ''; }
+    if (vehicleSel) { vehicleSel.required = false; vehicleSel.value = ''; }
   }
 }
 </script>

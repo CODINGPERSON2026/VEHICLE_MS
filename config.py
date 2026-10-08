@@ -6,10 +6,10 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 # Database Credentials
 DB_USER = os.environ.get('DB_USER', 'root')
-DB_PASSWORD = os.environ.get('DB_PASSWORD', 'yawar@123')
+DB_PASSWORD = os.environ.get('DB_PASSWORD', 'qaz123QAZ!@#')
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
 DB_PORT = os.environ.get('DB_PORT', '3306')
-DB_NAME = os.environ.get('DB_NAME', 'vms')
+DB_NAME = os.environ.get('DB_NAME', 'vehicle_management')
 
 # Constructed MySQL SQLAlchemy Connection URI
 DEFAULT_DATABASE_URL = (
