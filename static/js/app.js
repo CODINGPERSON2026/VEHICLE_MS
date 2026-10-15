@@ -643,39 +643,17 @@ function getAvailableVoices() {
   return _voicesCache || [];
 }
 
-// Strictly find Google en-IN / Microsoft Neerja female voice.
-// Priority: Neerja (en-IN) > Google en-IN > any en-IN female > Hindi female
-// Returns NULL if no authentic Indian voice exists so server-side Neerja TTS is used!
+// Strictly find Microsoft Neerja (or Google English India) ONLY.
+// Zero fallbacks. If Neerja is not found, returns null and stays completely silent.
 function getNeerjaGoogleVoice() {
   const voices = getAvailableVoices();
   if (!voices || !voices.length) return null;
 
-  // 1. Microsoft Neerja (en-IN) or Google India English female
   const neerja = voices.find(v => {
     const n = v.name.toLowerCase();
     return (n.includes('neerja') || (n.includes('google') && (v.lang === 'en-IN' || v.lang === 'en_IN'))) && !isMaleVoiceName(n);
   });
-  if (neerja) return neerja;
-
-  // 2. Any en-IN female voice
-  const enInFemale = voices.find(v => {
-    const n = v.name.toLowerCase();
-    return (v.lang === 'en-IN' || v.lang === 'en_IN' || n.includes('india')) && !isMaleVoiceName(n);
-  });
-  if (enInFemale) return enInFemale;
-
-  // 3. Fallback: Hindi female voice
-  const hiInFemale = voices.find(v => {
-    const n = v.name.toLowerCase();
-    const isHindi = v.lang === 'hi-IN' || v.lang === 'hi' || v.lang.startsWith('hi') ||
-                    n.includes('swara') || n.includes('kalpana') || n.includes('heera');
-    return isHindi && !isMaleVoiceName(n);
-  });
-  if (hiInFemale) return hiInFemale;
-
-  // If no authentic Indian voice is available in the browser (e.g. over IP address or mobile),
-  // return null so we use the server-side Neerja Neural voice via /api/tts/speak!
-  return null;
+  return neerja || null;
 }
 
 if ('speechSynthesis' in window) {
@@ -701,37 +679,8 @@ function stopAllAudio() {
   _currentSpeechUtterance = null;
 }
 
-// Play server-side high-fidelity Neerja Neural MP3 (100% authentic Indian girl voice on ANY device or IP)
-function playServerTTS(text, onEndedCallback) {
-  stopAllAudio();
-  const url = '/api/tts/speak?text=' + encodeURIComponent(text);
-  const audio = new Audio(url);
-  _activeGateAudio = audio;
-
-  let finished = false;
-  const finish = () => {
-    if (finished) return;
-    finished = true;
-    _activeGateAudio = null;
-    if (onEndedCallback) onEndedCallback();
-  };
-
-  audio.onended = finish;
-  audio.onerror = (e) => {
-    console.warn("Server TTS audio error:", e);
-    finish();
-  };
-
-  const playPromise = audio.play();
-  if (playPromise !== undefined) {
-    playPromise.catch(e => {
-      console.warn("Audio autoplay blocked by browser policy:", e);
-      finish();
-    });
-  }
-}
-
-// Speak exclusively with Google en-IN / Neerja female voice
+// Speak STRICTLY with Microsoft Neerja female voice.
+// Fallback removed: If Neerja is not installed, no other voice will ever play!
 async function speakWithNeerjaGoogleVoice(text, onEndedCallback) {
   if (!voiceAnnouncementsEnabled || !text) {
     if (onEndedCallback) onEndedCallback();
@@ -753,69 +702,69 @@ async function speakWithNeerjaGoogleVoice(text, onEndedCallback) {
   // 1. Immediately halt all other speech / audio so two voices NEVER overlap
   stopAllAudio();
 
-  // 2. Check if the browser locally has the authentic Neerja or Google en-IN voice
-  if ('speechSynthesis' in window) {
-    let voices = getAvailableVoices();
-    if (!voices || voices.length === 0) {
-      await new Promise(resolve => {
-        let resolved = false;
-        const done = () => {
-          if (!resolved) {
-            resolved = true;
-            resolve();
-          }
-        };
-        const timer = setTimeout(done, 250);
-        window.speechSynthesis.onvoiceschanged = () => {
-          clearTimeout(timer);
-          _voicesCache = window.speechSynthesis.getVoices();
-          done();
-        };
-      });
-      voices = getAvailableVoices();
-    }
-
-    const chosenVoice = getNeerjaGoogleVoice();
-
-    // If an authentic Indian voice is found in this browser (e.g. on localhost Edge/Chrome):
-    if (chosenVoice) {
-      // Tiny delay to let browser audio pipeline clear completely after cancel()
-      await new Promise(r => setTimeout(r, 60));
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = chosenVoice.lang || 'en-IN';
-      utterance.voice = chosenVoice;
-      utterance.rate = 0.90;
-      utterance.pitch = 1.05;
-
-      let finished = false;
-      const finish = () => {
-        if (finished) return;
-        finished = true;
-        _currentSpeechUtterance = null;
-        if (onEndedCallback) onEndedCallback();
-      };
-
-      utterance.onend = finish;
-      utterance.onerror = (e) => {
-        console.warn("SpeechSynthesis error:", e);
-        finish();
-      };
-
-      const words = text.split(/\s+/).length;
-      const maxWaitMs = Math.max(3000, words * 550);
-      setTimeout(finish, maxWaitMs);
-
-      _currentSpeechUtterance = utterance;
-      window.speechSynthesis.speak(utterance);
-      return;
-    }
+  if (!('speechSynthesis' in window)) {
+    if (onEndedCallback) onEndedCallback();
+    return;
   }
 
-  // 3. If NO authentic Indian voice is found in this browser (which happens when accessing
-  // via IP address or on client devices without Neerja), use the Server MP3 TTS API!
-  // This produces the 100% authentic en-IN-NeerjaExpressiveNeural voice identically everywhere.
-  playServerTTS(text, onEndedCallback);
+  let voices = getAvailableVoices();
+  if (!voices || voices.length === 0) {
+    await new Promise(resolve => {
+      let resolved = false;
+      const done = () => {
+        if (!resolved) {
+          resolved = true;
+          resolve();
+        }
+      };
+      const timer = setTimeout(done, 300);
+      window.speechSynthesis.onvoiceschanged = () => {
+        clearTimeout(timer);
+        _voicesCache = window.speechSynthesis.getVoices();
+        done();
+      };
+    });
+    voices = getAvailableVoices();
+  }
+
+  const chosenVoice = getNeerjaGoogleVoice();
+
+  // STRICT REQUIREMENT: If Neerja is not installed, play NOTHING (No fallback!)
+  if (!chosenVoice) {
+    console.warn("Neerja voice not found. All fallbacks are disabled. Install Neerja to hear audio.");
+    if (onEndedCallback) onEndedCallback();
+    return;
+  }
+
+  // Tiny delay to let browser audio pipeline clear completely after cancel()
+  await new Promise(r => setTimeout(r, 60));
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = chosenVoice.lang || 'en-IN';
+  utterance.voice = chosenVoice;
+  utterance.rate = 0.90;
+  utterance.pitch = 1.05;
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    _currentSpeechUtterance = null;
+    if (onEndedCallback) onEndedCallback();
+  };
+
+  utterance.onend = finish;
+  utterance.onerror = (e) => {
+    console.warn("SpeechSynthesis error:", e);
+    finish();
+  };
+
+  const words = text.split(/\s+/).length;
+  const maxWaitMs = Math.max(3000, words * 550);
+  setTimeout(finish, maxWaitMs);
+
+  _currentSpeechUtterance = utterance;
+  window.speechSynthesis.speak(utterance);
 }
 
 // Reset audio and cancel pending scan on page refresh / navigate
