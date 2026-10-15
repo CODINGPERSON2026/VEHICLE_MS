@@ -913,10 +913,11 @@ function buildAnnouncementText(vehicleNumber, driverName, direction, isTest, isC
 
   if (direction === 'DRIVER_CHANGE') {
     const isOutScan = !currentPendingScan || currentPendingScan.current_status === 'INSIDE' || currentPendingScan.recommended_direction === 'EXIT';
+    if (!isOutScan) {
+      return 'Gaadi MT mein wapas aa rahi hai.';
+    }
     if (dName) {
-      return isOutScan
-        ? `Naya driver ${dName} assign hua hai. Driver ${dName}, kripya sensor mein foonk maaro.`
-        : `Naya driver ${dName} assign hua hai. Gaadi MT mein wapas aa rahi hai.`;
+      return `Naya driver ${dName} assign hua hai. Kripya sensor mein foonk maaro.`;
     }
     return 'Naya driver assign hua hai. Kripya sensor mein foonk maaro.';
   }
