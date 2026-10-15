@@ -643,22 +643,40 @@ function getAvailableVoices() {
   return _voicesCache || [];
 }
 
-// Strictly find Microsoft Neerja (or Google English India) ONLY.
-// Zero fallbacks. If Neerja is not found, returns null and stays completely silent.
+// Strictly find Microsoft Neerja (or Google English India / English (India) female voice) ONLY.
+// Zero foreign/US fallbacks. If no Indian female voice is found, returns null and stays completely silent.
 function getNeerjaGoogleVoice() {
   const voices = getAvailableVoices();
   if (!voices || !voices.length) return null;
 
+  // 1. Direct Neerja match (e.g. "Microsoft Neerja (Natural) - English (India)", "Microsoft Neerja", etc.)
   const neerja = voices.find(v => {
     const n = v.name.toLowerCase();
-    return (n.includes('neerja') || (n.includes('google') && (v.lang === 'en-IN' || v.lang === 'en_IN'))) && !isMaleVoiceName(n);
+    return n.includes('neerja') && !isMaleVoiceName(n);
   });
-  return neerja || null;
+  if (neerja) return neerja;
+
+  // 2. Google English (India) or Microsoft English (India) female voice installed with English (India) pack
+  const inFemale = voices.find(v => {
+    const n = v.name.toLowerCase();
+    const isIndian = (v.lang === 'en-IN' || v.lang === 'en_IN' || n.includes('india') || n.includes('heera') || n.includes('swara'));
+    return isIndian && !isMaleVoiceName(n);
+  });
+  if (inFemale) return inFemale;
+
+  return null;
 }
 
 if ('speechSynthesis' in window) {
+  // Prime speech synthesis voices immediately on load
+  try {
+    const initial = window.speechSynthesis.getVoices();
+    if (initial && initial.length > 0) _voicesCache = initial;
+  } catch (e) {}
+
   window.speechSynthesis.onvoiceschanged = () => {
     _voicesCache = window.speechSynthesis.getVoices();
+    console.log("VMS Audio Voices loaded in browser:", _voicesCache.map(v => `"${v.name}" [${v.lang}]`));
   };
 }
 
@@ -717,7 +735,7 @@ async function speakWithNeerjaGoogleVoice(text, onEndedCallback) {
           resolve();
         }
       };
-      const timer = setTimeout(done, 300);
+      const timer = setTimeout(done, 400);
       window.speechSynthesis.onvoiceschanged = () => {
         clearTimeout(timer);
         _voicesCache = window.speechSynthesis.getVoices();
@@ -727,14 +745,19 @@ async function speakWithNeerjaGoogleVoice(text, onEndedCallback) {
     voices = getAvailableVoices();
   }
 
+  console.log("VMS Audio: Checking voices list (" + voices.length + " found):", voices.map(v => v.name));
+
   const chosenVoice = getNeerjaGoogleVoice();
 
   // STRICT REQUIREMENT: If Neerja is not installed, play NOTHING (No fallback!)
   if (!chosenVoice) {
-    console.warn("Neerja voice not found. All fallbacks are disabled. Install Neerja to hear audio.");
+    console.warn("Neerja voice not found. Available voices in this browser are:", voices.map(v => `"${v.name}" (${v.lang})`));
+    console.warn("If you recently installed Neerja in Windows, please close and RESTART your browser completely.");
     if (onEndedCallback) onEndedCallback();
     return;
   }
+
+  console.log("VMS Audio: Speaking with voice ->", chosenVoice.name);
 
   // Tiny delay to let browser audio pipeline clear completely after cancel()
   await new Promise(r => setTimeout(r, 60));
