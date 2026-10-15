@@ -1127,6 +1127,9 @@ function renderModalDirectionButton() {
     if (wrapIn) wrapIn.style.display = 'none';
     if (wrapOut) wrapOut.style.display = 'block';
 
+    const changeDriverBtn = document.getElementById('btn-change-driver-toggle');
+    if (changeDriverBtn) changeDriverBtn.style.display = '';
+
   } else {
     // 🚗 VEHICLE IS CURRENTLY OUTSIDE ON A TRIP
     // CANNOT DO EXIT (OUT)! Only ENTRY (IN) is permitted.
@@ -1155,6 +1158,15 @@ function renderModalDirectionButton() {
     // Since vehicle is OUTSIDE, only IN is possible!
     if (wrapIn) wrapIn.style.display = 'block';
     if (wrapOut) wrapOut.style.display = 'none';
+
+    // No need to change driver when vehicle is returning / coming IN!
+    const changeDriverBtn = document.getElementById('btn-change-driver-toggle');
+    const collapseEl = document.getElementById('collapseDriverSelect');
+    if (changeDriverBtn) changeDriverBtn.style.display = 'none';
+    if (collapseEl && collapseEl.classList.contains('show')) {
+      const bsCollapse = bootstrap.Collapse.getInstance(collapseEl);
+      if (bsCollapse) bsCollapse.hide();
+    }
   }
 }
 
@@ -1620,6 +1632,13 @@ function openScanConfirmationModal(scanData) {
         driverSelect.appendChild(opt);
       });
     }
+  }
+
+  // Change Driver option: Hide completely when vehicle is coming IN, show when dispatching OUT
+  const isVehicleComingIn = (scanData.current_status === 'OUTSIDE' || scanData.is_outside === true || scanData.recommended_direction === 'ENTRY') && scanData.current_status !== 'INSIDE';
+  const changeDriverBtn = document.getElementById('btn-change-driver-toggle');
+  if (changeDriverBtn) {
+    changeDriverBtn.style.display = isVehicleComingIn ? 'none' : '';
   }
 
   // Close driver change collapse if open
