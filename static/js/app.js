@@ -911,6 +911,10 @@ function buildAnnouncementText(vehicleNumber, driverName, direction, isTest, isC
     return 'Alcohol detect hua hai, aab gadi nhi chala sakte ho.';
   }
 
+  if (direction === 'DRIVER_UNAUTHORIZED') {
+    return 'Yeh driver authorized nahi hai. Driver change karo.';
+  }
+
   if (direction === 'DRIVER_CHANGE') {
     const isOutScan = !currentPendingScan || currentPendingScan.current_status === 'INSIDE' || currentPendingScan.recommended_direction === 'EXIT';
     if (!isOutScan) {
@@ -950,7 +954,11 @@ function buildAnnouncementText(vehicleNumber, driverName, direction, isTest, isC
 function speakVehicleDetection(vehicleNumber, driverName, direction, isTest = false, isConfirmed = false) {
   if (!voiceAnnouncementsEnabled) return;
 
-  playChime(true);  // instant chime
+  if (direction === 'DRIVER_UNAUTHORIZED' || direction === 'ALCOHOL_ALERT') {
+    playChime(false);
+  } else {
+    playChime(true);
+  }
 
   const text = buildAnnouncementText(vehicleNumber, driverName, direction, isTest, isConfirmed);
   if (!text) return;
@@ -1519,7 +1527,19 @@ function openScanConfirmationModal(scanData) {
   } else {
     scanDir = (getActiveNavbarDirection() === 'EXIT') ? 'OUT' : 'IN';
   }
-  speakVehicleDetection(detectedPlate, detectedDriver, scanDir);
+
+  const vehType = (scanData.vehicle && scanData.vehicle.vehicle_type) || '';
+  const initAuthTypes = (scanData.driver && scanData.driver.authorized_vehicle_types) || '';
+  const initAuthStatus = (scanData.driver && scanData.driver.auth_status) || 'AUTHORIZED';
+  const isInitialDriverAuth = scanData.driver && scanData.driver.is_authorized_for_vehicle !== undefined
+    ? scanData.driver.is_authorized_for_vehicle
+    : checkDriverAuthorizedForVehicle(initAuthTypes, vehType, initAuthStatus);
+
+  if (!isInitialDriverAuth) {
+    speakVehicleDetection(detectedPlate, detectedDriver, 'DRIVER_UNAUTHORIZED');
+  } else {
+    speakVehicleDetection(detectedPlate, detectedDriver, scanDir);
+  }
 
   const modalElem = document.getElementById('scanConfirmationModal');
   if (!modalElem) return;
@@ -1537,7 +1557,6 @@ function openScanConfirmationModal(scanData) {
   if (plateElem) plateElem.textContent = scanData.vehicle.registration_number || 'UNKNOWN';
 
   const typeElem = document.getElementById('modal-confirm-type');
-  const vehType = (scanData.vehicle && scanData.vehicle.vehicle_type) || '';
   if (typeElem) typeElem.textContent = vehType || 'N/A';
 
   const isVehAuth = scanData.vehicle ? (scanData.vehicle.auth_status === 'AUTHORIZED') : true;
@@ -1568,12 +1587,6 @@ function openScanConfirmationModal(scanData) {
 
   const driverMobileElem = document.getElementById('modal-confirm-driver-mobile');
   if (driverMobileElem) driverMobileElem.textContent = scanData.driver.mobile || 'N/A';
-
-  const initAuthTypes = (scanData.driver && scanData.driver.authorized_vehicle_types) || '';
-  const initAuthStatus = (scanData.driver && scanData.driver.auth_status) || 'AUTHORIZED';
-  const isInitialDriverAuth = scanData.driver && scanData.driver.is_authorized_for_vehicle !== undefined
-    ? scanData.driver.is_authorized_for_vehicle
-    : checkDriverAuthorizedForVehicle(initAuthTypes, vehType, initAuthStatus);
 
   updateDriverVehicleAuthUI(isInitialDriverAuth, initAuthTypes, scanData.driver ? scanData.driver.name : '', vehType, isVehAuth);
 
@@ -1771,9 +1784,13 @@ async function onConfirmDriverChanged(driverId) {
   // Reset auto-dispatching flag
   isAutoDispatching = false;
 
-  // Prompt the replacement driver via voice to blow into the MQ-3 sensor
+  // Prompt the replacement driver via voice (or speak unauthorized alert if driver is not authorized)
   const vehPlate = (currentPendingScan && currentPendingScan.vehicle && currentPendingScan.vehicle.registration_number) || '';
-  speakVehicleDetection(vehPlate, newDriverName, 'DRIVER_CHANGE');
+  if (!isDrvAuth) {
+    speakVehicleDetection(vehPlate, newDriverName, 'DRIVER_UNAUTHORIZED');
+  } else {
+    speakVehicleDetection(vehPlate, newDriverName, 'DRIVER_CHANGE');
+  }
 
   // Notify backend to update the pending scan's driver and reset sobriety test
   try {
