@@ -718,37 +718,16 @@ function playServerTTS(text, onEndedCallback) {
 
   audio.onended = finish;
   audio.onerror = (e) => {
-    console.warn("Server TTS audio failed, attempting local browser speech:", e);
+    console.warn("Server TTS audio error:", e);
     finish();
-    speakWithBrowserFallback(text, onEndedCallback);
   };
 
   const playPromise = audio.play();
   if (playPromise !== undefined) {
     playPromise.catch(e => {
-      console.warn("Autoplay policy or audio playback blocked, attempting local speech:", e);
+      console.warn("Audio autoplay blocked by browser policy:", e);
       finish();
-      speakWithBrowserFallback(text, onEndedCallback);
     });
-  }
-}
-
-// Last-resort fallback to browser SpeechSynthesis if server audio is blocked
-function speakWithBrowserFallback(text, onEndedCallback) {
-  if (!('speechSynthesis' in window)) {
-    if (onEndedCallback) onEndedCallback();
-    return;
-  }
-  try {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-IN';
-    utterance.rate = 0.90;
-    utterance.pitch = 1.05;
-    utterance.onend = () => { if (onEndedCallback) onEndedCallback(); };
-    utterance.onerror = () => { if (onEndedCallback) onEndedCallback(); };
-    window.speechSynthesis.speak(utterance);
-  } catch (err) {
-    if (onEndedCallback) onEndedCallback();
   }
 }
 
@@ -758,6 +737,18 @@ async function speakWithNeerjaGoogleVoice(text, onEndedCallback) {
     if (onEndedCallback) onEndedCallback();
     return;
   }
+
+  // Cross-tab deduplication: prevent two open tabs on the same computer from speaking simultaneously
+  const now = Date.now();
+  const lastSpoken = parseInt(localStorage.getItem('vms_last_spoken_ts') || '0', 10);
+  const lastText = localStorage.getItem('vms_last_spoken_txt') || '';
+  if (now - lastSpoken < 2500 && lastText === text) {
+    console.log("Suppressing duplicate announcement from secondary tab:", text);
+    if (onEndedCallback) onEndedCallback();
+    return;
+  }
+  localStorage.setItem('vms_last_spoken_ts', now.toString());
+  localStorage.setItem('vms_last_spoken_txt', text);
 
   // 1. Immediately halt all other speech / audio so two voices NEVER overlap
   stopAllAudio();
