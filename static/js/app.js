@@ -912,14 +912,13 @@ function buildAnnouncementText(vehicleNumber, driverName, direction, isTest, isC
   }
 
   if (direction === 'DRIVER_CHANGE') {
-    const vehPart = plateSpoken ? `Gaadi number ${plateSpoken}. ` : '';
     const isOutScan = !currentPendingScan || currentPendingScan.current_status === 'INSIDE' || currentPendingScan.recommended_direction === 'EXIT';
     if (dName) {
       return isOutScan
-        ? `${vehPart}Naya driver ${dName} assign hua hai. Driver ${dName}, kripya sensor mein foonk maaro.`
-        : `${vehPart}Naya driver ${dName} assign hua hai. Gaadi MT mein wapas aa rahi hai.`;
+        ? `Naya driver ${dName} assign hua hai. Driver ${dName}, kripya sensor mein foonk maaro.`
+        : `Naya driver ${dName} assign hua hai. Gaadi MT mein wapas aa rahi hai.`;
     }
-    return `${vehPart}Naya driver assign hua hai. Kripya sensor mein foonk maaro.`;
+    return 'Naya driver assign hua hai. Kripya sensor mein foonk maaro.';
   }
 
   if (isTest) {
