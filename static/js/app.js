@@ -807,14 +807,14 @@ function updateVoiceButtons() {
   btns.forEach(btn => {
     if (voiceAnnouncementsEnabled) {
       btn.className = 'btn btn-outline-success btn-sm btn-toggle-voice rounded-pill px-2 px-md-3 py-1 shadow-sm d-inline-flex align-items-center gap-1';
-      btn.innerHTML = '<i class="fa-solid fa-volume-high"></i><span class="d-none d-sm-inline fw-semibold" style="font-size:0.78rem;">Voice: ON</span>';
+      btn.innerHTML = '<i class="fa-solid fa-volume-high"></i><span class="fw-semibold" style="font-size:0.78rem;">Voice: ON</span>';
       btn.title = 'Audio / Voice is ON (Click to Mute)';
       btn.setAttribute('aria-label', 'Audio / Voice is ON (Click to Mute)');
     } else {
       btn.className = 'btn btn-outline-danger btn-sm btn-toggle-voice rounded-pill px-2 px-md-3 py-1 shadow-sm d-inline-flex align-items-center gap-1';
-      btn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i><span class="d-none d-sm-inline fw-semibold" style="font-size:0.78rem;">Voice: OFF</span>';
-      btn.title = 'Audio / Voice is OFF (Click to Enable)';
-      btn.setAttribute('aria-label', 'Audio / Voice is OFF (Click to Enable)');
+      btn.innerHTML = '<i class="fa-solid fa-volume-xmark"></i><span class="fw-semibold" style="font-size:0.78rem;">Voice: MUTED</span>';
+      btn.title = 'Audio / Voice is MUTED (Click to Enable)';
+      btn.setAttribute('aria-label', 'Audio / Voice is MUTED (Click to Enable)');
     }
   });
 }
@@ -1557,6 +1557,7 @@ function openScanConfirmationModal(scanData) {
 
   scanConfirmationModalInstance = bootstrap.Modal.getOrCreateInstance(modalElem);
   scanConfirmationModalInstance.show();
+  updateVoiceButtons();
   playChime(true);
 
   if (!isVehicleOutside) {

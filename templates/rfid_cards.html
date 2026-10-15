@@ -23,8 +23,8 @@
       </form>
 
       <div class="d-flex gap-2">
-        <button class="btn btn-outline-secondary" type="button" onclick="testVoiceAnnouncement()" title="Test Voice Output">
-          <i class="fa-solid fa-bullhorn me-1"></i>Test Voice
+        <button class="btn btn-outline-success btn-sm btn-toggle-voice rounded-pill px-3 py-1 shadow-sm d-flex align-items-center gap-1" type="button" onclick="toggleVoiceAnnouncements()" title="Audio / Voice is ON (Click to Mute)">
+          <i class="fa-solid fa-volume-high me-1"></i>Voice: ON
         </button>
         {% if current_user.role != Role.REPORT_VIEWER %}
         <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#enrollCardModal">
