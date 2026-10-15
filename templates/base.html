@@ -170,6 +170,11 @@
           <span id="live-clock" class="fw-semibold text-dark font-monospace">--:--:--</span>
         </div>
         <span class="badge bg-light text-muted border border-secondary-subtle" style="font-size: 0.65rem;">SERVER</span>
+        <div class="vr mx-1"></div>
+        <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1 px-2 py-1 rounded-2 shadow-sm" title="Logout">
+          <i class="fa-solid fa-power-off"></i>
+          <span class="d-none d-md-inline small fw-semibold">Logout</span>
+        </a>
       </div>
     </header>
     {% endif %}

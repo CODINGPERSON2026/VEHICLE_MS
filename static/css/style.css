@@ -44,6 +44,9 @@ body {
 
 .sidebar {
   width: 270px;
+  height: 100vh;
+  position: sticky;
+  top: 0;
   background-color: var(--sidebar-bg);
   color: var(--sidebar-text);
   flex-shrink: 0;
@@ -66,6 +69,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 .sidebar-brand i {
@@ -77,6 +81,16 @@ body {
   padding: 1rem 0.75rem;
   flex-grow: 1;
   overflow-y: auto;
+  min-height: 0;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
 }
 
 .sidebar-nav .nav-heading {
@@ -121,9 +135,11 @@ body {
 }
 
 .sidebar-footer {
-  padding: 1rem;
+  padding: 0.85rem 1rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+  margin-top: auto;
 }
 
 /* ---------------- Sidebar Collapsed State ---------------- */
@@ -183,6 +199,9 @@ body {
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  position: sticky;
+  top: 0;
+  z-index: 999;
 }
 
 .page-container {
