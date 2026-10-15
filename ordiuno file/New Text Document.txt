@@ -31,13 +31,13 @@ MFRC522 rfid(SS_PIN, RST_PIN);
 // --------------------------------------------------
 const int greenLED  = 2;
 const int redLED    = 4;
-const int buzzerPin = 15;
+const int buzzerPin = 5;
 
 // --------------------------------------------------
 // 5. MQ GAS SENSOR
 // --------------------------------------------------
 const int mqPin            = 34;
-const int ALCOHOL_THRESHOLD = 800; // Calibrated Threshold: 800 se zyada hone par alcohol alarm
+const int ALCOHOL_THRESHOLD = 200; // Calibrated Threshold: 200 se zyada hone par alcohol alarm
 
 // --------------------------------------------------
 // 6. TIMERS
@@ -250,17 +250,13 @@ void sendHeartbeat() {
   }
   lastHeartbeat = millis();
 
-  int currentGas = analogRead(mqPin);
-
   String payload = "{";
   payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
   payload += "\"status\":\"online\",";
-  payload += "\"firmware_version\":\"" + String(FIRMWARE_VERSION) + "\",";
-  payload += "\"alcohol_value\":" + String(currentGas);
+  payload += "\"firmware_version\":\"" + String(FIRMWARE_VERSION) + "\"";
   payload += "}";
 
-  Serial.print("[HEARTBEAT] Sending with live gas value: ");
-  Serial.println(currentGas);
+  Serial.println("[HEARTBEAT] Sending...");
   int httpCode = postToServer("/api/device/heartbeat", payload);
 
   if (httpCode >= 200 && httpCode < 300) {
@@ -273,8 +269,6 @@ void sendHeartbeat() {
 // --------------------------------------------------
 // 13. MQ GAS SENSOR
 // --------------------------------------------------
-unsigned long lastGasSync = 0;
-
 void readGasSensor() {
   if (millis() - lastGasRead < GAS_INTERVAL) {
     return;
@@ -286,9 +280,7 @@ void readGasSensor() {
   Serial.print("[GAS SENSOR] Analog Value: ");
   Serial.println(gasValue);
 
-  bool isAlcohol = (gasValue > ALCOHOL_THRESHOLD);
-
-  if (isAlcohol) {
+  if (gasValue > ALCOHOL_THRESHOLD) {
     digitalWrite(buzzerPin, HIGH);
     digitalWrite(redLED, HIGH);
     digitalWrite(greenLED, LOW);
@@ -317,17 +309,6 @@ void readGasSensor() {
     digitalWrite(redLED, LOW);
     // Reset alert flag only when sensor reading drops back to normal (< 600)
     isAlcoholAlertActive = false;
-  }
-
-  // Continuously sync live reading to server every 1 second so web app updates live in real-time
-  if (millis() - lastGasSync >= 1000) {
-    lastGasSync = millis();
-    String livePayload = "{";
-    livePayload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
-    livePayload += "\"alcohol_detected\":" + String(isAlcohol ? "true" : "false") + ",";
-    livePayload += "\"alcohol_value\":" + String(gasValue);
-    livePayload += "}";
-    postToServer("/api/device/sobriety_reading", livePayload);
   }
 }
 
