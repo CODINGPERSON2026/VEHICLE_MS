@@ -473,6 +473,10 @@ async function selectTripDriver(driverId, driverName) {
     }
   }
 
+  // Announce newly selected driver
+  const vehPlate = (currentEvent && currentEvent.vehicle_number) || '';
+  speakVehicleDetection(vehPlate, chosenDriverName, 'DRIVER_CHANGE');
+
   // Grant Access & Open Barrier Gate
   finalizeAccessGrant(chosenDriverName);
 }
@@ -908,10 +912,14 @@ function buildAnnouncementText(vehicleNumber, driverName, direction, isTest, isC
   }
 
   if (direction === 'DRIVER_CHANGE') {
-    const vehPart = plateSpoken ? `Gaadi number ${plateSpoken}, ` : '';
-    return dName
-      ? `${vehPart}driver ${dName} gaadi leke jaa rahe hain, kripya sensor mein foonk maaro.`
-      : `${vehPart}naye driver gaadi leke jaa rahe hain, kripya sensor mein foonk maaro.`;
+    const vehPart = plateSpoken ? `Gaadi number ${plateSpoken}. ` : '';
+    const isOutScan = !currentPendingScan || currentPendingScan.current_status === 'INSIDE' || currentPendingScan.recommended_direction === 'EXIT';
+    if (dName) {
+      return isOutScan
+        ? `${vehPart}Naya driver ${dName} assign hua hai. Driver ${dName}, kripya sensor mein foonk maaro.`
+        : `${vehPart}Naya driver ${dName} assign hua hai. Gaadi MT mein wapas aa rahi hai.`;
+    }
+    return `${vehPart}Naya driver assign hua hai. Kripya sensor mein foonk maaro.`;
   }
 
   if (isTest) {
@@ -1633,12 +1641,13 @@ async function onConfirmDriverChanged(driverId) {
   } else {
     const selectedOpt = select.options[select.selectedIndex];
     if (selectedOpt) {
-      newDriverName = selectedOpt.dataset.driverName;
+      newDriverName = selectedOpt.dataset.driverName || selectedOpt.getAttribute('data-driver-name') || selectedOpt.text.split('(')[0].trim();
       if (nameElem) nameElem.textContent = newDriverName;
       if (rankElem) rankElem.textContent = selectedOpt.dataset.driverRank || 'Pool Driver';
       if (armyElem) armyElem.textContent = selectedOpt.dataset.driverArmy ? `Army No: ${selectedOpt.dataset.driverArmy}` : '';
       if (mobileElem) mobileElem.textContent = selectedOpt.dataset.driverMobile || 'N/A';
     }
+    console.log("VMS: New driver selected ->", newDriverName);
   }
 
   // Critical requirement: Reset sobriety state to AWAITING_TEST for the replacement driver!
