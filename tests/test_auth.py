@@ -28,7 +28,7 @@ def test_login_success(client, admin_user):
     }, follow_redirects=True)
     
     assert resp.status_code == 200
-    assert b"Welcome back, Master Admin!" in resp.data
+    assert b"Welcome back" not in resp.data
 
 def test_login_invalid_credentials(client, admin_user):
     resp = client.post('/login', data={

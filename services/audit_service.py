@@ -25,7 +25,7 @@ def log_audit(action: str, description: str, related_vehicle: str = None, relate
             ip_address = ip_address.split(',')[0].strip()
 
     audit_entry = AuditLog(
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(),
         user_id=user_id,
         username=username,
         action=action,

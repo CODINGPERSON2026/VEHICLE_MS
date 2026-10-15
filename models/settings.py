@@ -8,7 +8,7 @@ class SystemSetting(db.Model):
     key = db.Column(db.String(64), unique=True, nullable=False, index=True)
     value = db.Column(db.Text, nullable=False)
     description = db.Column(db.String(255), nullable=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     @classmethod
     def get_value(cls, key: str, default: str = None) -> str:

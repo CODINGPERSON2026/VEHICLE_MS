@@ -1,0 +1,376 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <SPI.h>
+#include <MFRC522.h>
+
+// --------------------------------------------------
+// 1. WIFI CONFIGURATION
+// --------------------------------------------------
+const char* WIFI_SSID     = "afan";
+const char* WIFI_PASSWORD = "12345678";
+
+// --------------------------------------------------
+// 2. FLASK SERVER CONFIGURATION
+// --------------------------------------------------
+const char* SERVER_URL       = "http://10.116.48.120:5000";
+const char* DEVICE_ID        = "GATE01";
+const char* API_KEY          = "dev_gate01_secret";
+const char* GATE_DIRECTION   = "ENTRY";
+const char* FIRMWARE_VERSION = "v1.0.0";
+
+// --------------------------------------------------
+// 3. RFID RC522 PINS
+// --------------------------------------------------
+#define SS_PIN  5
+#define RST_PIN 22
+
+MFRC522 rfid(SS_PIN, RST_PIN);
+
+// --------------------------------------------------
+// 4. LED AND BUZZER PINS
+// --------------------------------------------------
+const int greenLED  = 2;
+const int redLED    = 4;
+const int buzzerPin = 15;
+
+// --------------------------------------------------
+// 5. MQ GAS SENSOR
+// --------------------------------------------------
+const int mqPin            = 34;
+const int ALCOHOL_THRESHOLD = 800; // Calibrated Threshold: 800 se zyada hone par alcohol alarm
+
+// --------------------------------------------------
+// 6. TIMERS
+// --------------------------------------------------
+unsigned long lastHeartbeat    = 0;
+unsigned long lastGasRead      = 0;
+unsigned long lastAlcoholAlert = 0;
+unsigned long lastScanTime     = 0;
+String lastScannedUID          = "";
+const unsigned long SCAN_COOLDOWN_MS = 3000;
+
+const unsigned long HEARTBEAT_INTERVAL     = 2000;
+const unsigned long GAS_INTERVAL           = 1000;
+bool isAlcoholAlertActive                  = false; // Sent ONCE per event, avoids repeated popups
+
+// --------------------------------------------------
+// 7. BUZZER FUNCTIONS
+// --------------------------------------------------
+void beepOnce() {
+  digitalWrite(buzzerPin, HIGH);
+  delay(150);
+  digitalWrite(buzzerPin, LOW);
+}
+
+void beepSuccess() {
+  beepOnce();
+  delay(100);
+  beepOnce();
+}
+
+void beepError() {
+  for (int i = 0; i < 3; i++) {
+    beepOnce();
+    delay(100);
+  }
+}
+
+// --------------------------------------------------
+// 8. LED FUNCTIONS
+// --------------------------------------------------
+void greenSignal() {
+  digitalWrite(greenLED, HIGH);
+  digitalWrite(redLED, LOW);
+}
+
+void redSignal() {
+  digitalWrite(greenLED, LOW);
+  digitalWrite(redLED, HIGH);
+}
+
+void allSignalsOff() {
+  digitalWrite(greenLED, LOW);
+  digitalWrite(redLED, LOW);
+}
+
+// --------------------------------------------------
+// 9. WIFI CONNECTION
+// --------------------------------------------------
+void connectWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+
+  Serial.println();
+  Serial.print("[WIFI] Connecting to SSID: ");
+  Serial.println(WIFI_SSID);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("[WIFI] Connected!");
+    Serial.print("[WIFI] ESP32 IP: ");
+    Serial.println(WiFi.localIP());
+
+    greenSignal();
+    beepSuccess();
+    delay(300);
+    allSignalsOff();
+  } else {
+    Serial.println("[WIFI ERROR] Connection failed.");
+    redSignal();
+    beepError();
+    delay(500);
+    allSignalsOff();
+  }
+}
+
+// --------------------------------------------------
+// 10. HTTP POST HELPER
+// --------------------------------------------------
+int postToServer(const char* endpoint, String payload) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WIFI ERROR] WiFi disconnected.");
+    return -1;
+  }
+
+  HTTPClient http;
+  String url = String(SERVER_URL) + endpoint;
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-API-Key", API_KEY);
+  http.addHeader("X-Device-Id", DEVICE_ID);
+
+  int httpCode = http.POST(payload);
+
+  Serial.print("[HTTP] Endpoint: ");
+  Serial.println(url);
+
+  Serial.print("[HTTP] Status: ");
+  Serial.println(httpCode);
+
+  if (httpCode > 0) {
+    Serial.print("[HTTP] Response: ");
+    Serial.println(http.getString());
+  } else {
+    Serial.print("[HTTP ERROR] ");
+    Serial.println(http.errorToString(httpCode));
+  }
+
+  http.end();
+  return httpCode;
+}
+
+// --------------------------------------------------
+// 11. RFID SCAN
+// --------------------------------------------------
+void scanRFID() {
+  if (!rfid.PICC_IsNewCardPresent()) {
+    return;
+  }
+
+  if (!rfid.PICC_ReadCardSerial()) {
+    return;
+  }
+
+  beepOnce();
+
+  String uid = "";
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    if (rfid.uid.uidByte[i] < 0x10) {
+      uid += "0";
+    }
+    uid += String(rfid.uid.uidByte[i], HEX);
+  }
+  uid.toUpperCase();
+
+  // Cooldown filter to prevent rapid duplicate re-scans when card stays on reader
+  if (uid == lastScannedUID && (millis() - lastScanTime < SCAN_COOLDOWN_MS)) {
+    rfid.PICC_HaltA();
+    rfid.PCD_StopCrypto1();
+    return;
+  }
+  lastScannedUID = uid;
+  lastScanTime = millis();
+
+  Serial.println();
+  Serial.println("[RFID] Card detected!");
+  Serial.print("[RFID] UID: ");
+  Serial.println(uid);
+
+  int currentGas = analogRead(mqPin);
+  bool isAlcoholDetected = (currentGas > ALCOHOL_THRESHOLD);
+
+  String payload = "{";
+  payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
+  payload += "\"uid\":\"" + uid + "\",";
+  payload += "\"direction\":\"" + String(GATE_DIRECTION) + "\",";
+  payload += "\"firmware_version\":\"" + String(FIRMWARE_VERSION) + "\",";
+  payload += "\"alcohol_detected\":" + String(isAlcoholDetected ? "true" : "false") + ",";
+  payload += "\"alcohol_value\":" + String(currentGas);
+  payload += "}";
+
+  Serial.print("[RFID] Sending: ");
+  Serial.println(payload);
+
+  int httpCode = postToServer("/api/rfid/scan", payload);
+
+  if (httpCode >= 200 && httpCode < 300) {
+    Serial.println("[RFID] Server accepted request.");
+    greenSignal();
+    beepSuccess();
+    delay(500);
+    allSignalsOff();
+  } else {
+    Serial.println("[RFID] Request failed or rejected.");
+    redSignal();
+    beepError();
+    delay(500);
+    allSignalsOff();
+  }
+
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
+}
+
+// --------------------------------------------------
+// 12. DEVICE HEARTBEAT
+// --------------------------------------------------
+void sendHeartbeat() {
+  if (millis() - lastHeartbeat < HEARTBEAT_INTERVAL) {
+    return;
+  }
+  lastHeartbeat = millis();
+
+  int currentGas = analogRead(mqPin);
+
+  String payload = "{";
+  payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
+  payload += "\"status\":\"online\",";
+  payload += "\"firmware_version\":\"" + String(FIRMWARE_VERSION) + "\",";
+  payload += "\"alcohol_value\":" + String(currentGas);
+  payload += "}";
+
+  Serial.print("[HEARTBEAT] Sending with live gas value: ");
+  Serial.println(currentGas);
+  int httpCode = postToServer("/api/device/heartbeat", payload);
+
+  if (httpCode >= 200 && httpCode < 300) {
+    Serial.println("[HEARTBEAT] Successful.");
+  } else {
+    Serial.println("[HEARTBEAT] Failed.");
+  }
+}
+
+// --------------------------------------------------
+// 13. MQ GAS SENSOR
+// --------------------------------------------------
+unsigned long lastGasSync = 0;
+
+void readGasSensor() {
+  if (millis() - lastGasRead < GAS_INTERVAL) {
+    return;
+  }
+  lastGasRead = millis();
+
+  int gasValue = analogRead(mqPin);
+
+  Serial.print("[GAS SENSOR] Analog Value: ");
+  Serial.println(gasValue);
+
+  bool isAlcohol = (gasValue > ALCOHOL_THRESHOLD);
+
+  if (isAlcohol) {
+    digitalWrite(buzzerPin, HIGH);
+    digitalWrite(redLED, HIGH);
+    digitalWrite(greenLED, LOW);
+
+    // Send Alcohol Alert ONCE per detection event so popup does not open repeatedly
+    if (!isAlcoholAlertActive) {
+      isAlcoholAlertActive = true;
+      lastAlcoholAlert = millis();
+
+      String payload = "{";
+      payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
+      payload += "\"alcohol_detected\":true,";
+      payload += "\"alcohol_value\":" + String(gasValue);
+      payload += "}";
+
+      Serial.println("[GAS ALERT] Broadcasting Alcohol Alert to Web Server (Single Alert)...");
+      int httpCode = postToServer("/api/device/alcohol_alert", payload);
+      if (httpCode >= 200 && httpCode < 300) {
+        Serial.println("[GAS ALERT] Server accepted alcohol violation! Webpage updated.");
+      } else {
+        Serial.println("[GAS ALERT] Server notification failed.");
+      }
+    }
+  } else {
+    digitalWrite(buzzerPin, LOW);
+    digitalWrite(redLED, LOW);
+    // Reset alert flag only when sensor reading drops back to normal (< 600)
+    isAlcoholAlertActive = false;
+  }
+
+  // Continuously sync live reading to server every 1 second so web app updates live in real-time
+  if (millis() - lastGasSync >= 1000) {
+    lastGasSync = millis();
+    String livePayload = "{";
+    livePayload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
+    livePayload += "\"alcohol_detected\":" + String(isAlcohol ? "true" : "false") + ",";
+    livePayload += "\"alcohol_value\":" + String(gasValue);
+    livePayload += "}";
+    postToServer("/api/device/sobriety_reading", livePayload);
+  }
+}
+
+// --------------------------------------------------
+// 14. SETUP
+// --------------------------------------------------
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  pinMode(greenLED, OUTPUT);
+  pinMode(redLED, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(mqPin, INPUT);
+
+  allSignalsOff();
+  digitalWrite(buzzerPin, LOW);
+
+  analogReadResolution(12);
+
+  Serial.println();
+  Serial.println("================================");
+  Serial.println(" SMART VEHICLE GATE");
+  Serial.println(" ESP32 + RC522 + MQ SENSOR");
+  Serial.println("================================");
+
+  SPI.begin(18, 19, 23, SS_PIN);
+  rfid.PCD_Init();
+  Serial.println("[RFID] RC522 initialized.");
+
+  connectWiFi();
+  Serial.println("[SYSTEM] Setup complete.");
+}
+
+// --------------------------------------------------
+// 15. MAIN LOOP
+// --------------------------------------------------
+void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+  }
+
+  scanRFID();
+  sendHeartbeat();
+  readGasSensor();
+}

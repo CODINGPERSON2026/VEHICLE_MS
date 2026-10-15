@@ -50,7 +50,7 @@ def create_vehicle():
         success, msg, vehicle = VehicleService.create_vehicle(request.form, user=current_user)
         if success:
             flash(msg, 'success')
-            return redirect(url_for('vehicles.view_vehicle', vehicle_id=vehicle.id))
+            return redirect(url_for('vehicles.list_vehicles'))
         else:
             flash(msg, 'danger')
 
@@ -170,5 +170,5 @@ def export_vehicles_csv():
         ])
 
     response = Response(output.getvalue(), mimetype='text/csv')
-    response.headers['Content-Disposition'] = f'attachment; filename=vehicle_master_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
+    response.headers['Content-Disposition'] = f'attachment; filename=vehicle_master_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
     return response

@@ -46,6 +46,8 @@ Content-Type: application/json
 | `direction` | String | No | `"ENTRY"` or `"EXIT"`. If omitted, server resolves using device configuration. |
 | `event_id` | String | Yes | Unique UUID / timestamp for idempotency. |
 | `is_demo` | Boolean | No | Mark as test/simulated scan. |
+| `alcohol_detected` | Boolean | No | `true` if MQ-3 sensor detected alcohol level above threshold. |
+| `alcohol_value` | Float/Int | No | Raw ADC reading (0-4095) from MQ-3 analog pin. |
 
 #### Successful Entry Response (`HTTP 200 OK`)
 ```json
@@ -79,6 +81,19 @@ Content-Type: application/json
 ```
 
 #### Denied / Exception Responses
+- **Intoxicated Driver / Alcohol Detected (`HTTP 403 Forbidden`):**
+  ```json
+  {
+    "success": false,
+    "decision": "ENTRY_DENIED",
+    "reason": "ALCOHOL_DETECTED",
+    "message": "ALCOHOL DETECTED! Driver (Rajesh Sharma) is intoxicated. Gate access strictly denied.",
+    "alcohol_detected": true,
+    "alcohol_value": 2450.0,
+    "vehicle_number": "MH12AB1234",
+    "driver_name": "Rajesh Sharma"
+  }
+  ```
 - **Unregistered RFID (`HTTP 404 Not Found`):**
   ```json
   {

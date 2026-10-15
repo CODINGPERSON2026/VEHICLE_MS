@@ -21,7 +21,7 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), nullable=True)
     role = db.Column(db.String(32), nullable=False, default=Role.GATE_OPERATOR)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
     last_login = db.Column(db.DateTime, nullable=True)
     
     # Audit log relationship

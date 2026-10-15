@@ -74,7 +74,8 @@
           <td class="small text-muted">{{ a.device.device_name if a.device else 'System' }}</td>
           <td><span class="badge bg-light text-dark border">{{ a.direction }}</span></td>
           <td>
-            {% if a.reason == 'UNKNOWN_RFID' %}<span class="badge bg-danger">UNKNOWN RFID</span>
+            {% if a.reason == 'ALCOHOL_DETECTED' %}<span class="badge bg-danger shadow-sm"><i class="fa-solid fa-wine-bottle me-1"></i> ALCOHOL DETECTED</span>
+            {% elif a.reason == 'UNKNOWN_RFID' %}<span class="badge bg-danger">UNKNOWN RFID</span>
             {% elif a.reason == 'BLOCKED_CARD' or a.reason == 'BLOCKED_VEHICLE' %}<span class="badge bg-danger">BLOCKED</span>
             {% elif a.reason == 'EXPIRED_AUTHORIZATION' or a.reason == 'EXPIRED_CARD' %}<span class="badge bg-warning text-dark">EXPIRED</span>
             {% elif a.reason == 'DUPLICATE_ENTRY' %}<span class="badge bg-info text-dark">ALREADY INSIDE</span>

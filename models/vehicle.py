@@ -53,12 +53,13 @@ class Vehicle(db.Model):
     mobile_number = db.Column(db.String(24), nullable=True)
     
     auth_status = db.Column(db.String(32), nullable=False, default=AuthStatus.AUTHORIZED, index=True)
+    current_vehicle_location = db.Column(db.String(20), default='INSIDE', nullable=False, index=True)
     
     is_active = db.Column(db.Boolean, default=True, nullable=False, index=True) # Soft delete
     is_demo = db.Column(db.Boolean, default=False, nullable=False)
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     # Aliases for compatibility
     @property
@@ -113,7 +114,7 @@ class Vehicle(db.Model):
     @property
     def is_currently_outside(self):
         """Returns True if vehicle is currently dispatched on an outside trip."""
-        return self.get_active_outside_movement() is not None
+        return self.current_vehicle_location == 'OUT' or self.get_active_outside_movement() is not None
 
     @property
     def is_currently_inside(self):

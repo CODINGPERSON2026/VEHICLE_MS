@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   
   <!-- Custom Design System -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=3.1">
   
   {% block extra_head %}{% endblock %}
 </head>
@@ -20,6 +20,14 @@
   {% if current_user.is_authenticated %}
   <!-- Sidebar Navigation -->
   <aside class="sidebar" id="app-sidebar">
+    <script>
+      (function() {
+        var sb = document.getElementById('app-sidebar');
+        if (localStorage.getItem('sidebarCollapsed') !== 'false') {
+          sb.classList.add('collapsed');
+        }
+      })();
+    </script>
     <div class="sidebar-brand">
       <i class="fa-solid fa-id-card-clip"></i>
       <div class="text-truncate">
@@ -29,8 +37,8 @@
     </div>
 
     <nav class="sidebar-nav">
-      {% if current_user.role == 'MAINGATE' %}
-      <div class="nav-heading">Main Gate Station</div>
+      {% if current_user.role in ['MAINGATE', 'MTGATE', 'MT GATE'] %}
+      <div class="nav-heading">MT Gate Station</div>
       <a href="{{ url_for('dashboard.index') }}" class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
         <i class="fa-solid fa-chart-pie"></i> <span>Dashboard</span>
       </a>
@@ -41,7 +49,13 @@
         <i class="fa-solid fa-road text-warning"></i> <span>Vehicles Outside (Trip)</span>
       </a>
       <a href="{{ url_for('movements.currently_inside') }}" class="nav-link {% if request.endpoint in ['movements.currently_inside', 'movements.vehicles_inside'] %}active{% endif %}">
-        <i class="fa-solid fa-warehouse text-info"></i> <span>Inside Depot</span>
+        <i class="fa-solid fa-warehouse text-info"></i> <span>Inside MT Garage</span>
+      </a>
+      <a href="{{ url_for('movements.movement_register') }}" class="nav-link {% if request.endpoint == 'movements.movement_register' %}active{% endif %}">
+        <i class="fa-solid fa-book text-secondary"></i> <span>Movement Register</span>
+      </a>
+      <a href="{{ url_for('vehicles.list_vehicles') }}" class="nav-link {% if request.endpoint and 'vehicles' in request.endpoint %}active{% endif %}">
+        <i class="fa-solid fa-car text-primary"></i> <span>Vehicle Master</span>
       </a>
       {% else %}
       <div class="nav-heading">Operations</div>
@@ -52,7 +66,7 @@
         <i class="fa-solid fa-road text-warning"></i> <span>Vehicles Outside (Trip)</span>
       </a>
       <a href="{{ url_for('movements.currently_inside') }}" class="nav-link {% if request.endpoint in ['movements.currently_inside', 'movements.vehicles_inside'] %}active{% endif %}">
-        <i class="fa-solid fa-warehouse text-info"></i> <span>Inside Depot</span>
+        <i class="fa-solid fa-warehouse text-info"></i> <span>Inside MT Garage</span>
       </a>
       <a href="{{ url_for('movements.movement_register') }}" class="nav-link {% if request.endpoint == 'movements.movement_register' %}active{% endif %}">
         <i class="fa-solid fa-book"></i> <span>Movement Register</span>
@@ -62,16 +76,18 @@
       </a>
 
       <div class="nav-heading">Master Data</div>
-      <a href="{{ url_for('vehicles.list_vehicles') }}" class="nav-link {% if 'vehicles' in request.endpoint %}active{% endif %}">
+      <a href="{{ url_for('vehicles.list_vehicles') }}" class="nav-link {% if request.endpoint and 'vehicles' in request.endpoint %}active{% endif %}">
         <i class="fa-solid fa-car"></i> <span>Vehicle Master</span>
       </a>
-      <a href="{{ url_for('drivers.list_drivers') }}" class="nav-link {% if 'drivers' in request.endpoint %}active{% endif %}">
+      <a href="{{ url_for('drivers.list_drivers') }}" class="nav-link {% if request.endpoint and 'drivers' in request.endpoint %}active{% endif %}">
         <i class="fa-solid fa-id-badge"></i> <span>Driver Master</span>
       </a>
-      <a href="{{ url_for('rfid.list_cards') }}" class="nav-link {% if 'rfid' in request.endpoint %}active{% endif %}">
+      {% if current_user.role not in ['MAINGATE', 'MTGATE', 'MT GATE'] %}
+      <a href="{{ url_for('rfid.list_cards') }}" class="nav-link {% if request.endpoint and 'rfid' in request.endpoint %}active{% endif %}">
         <i class="fa-solid fa-id-card"></i> <span>RFID Cards</span>
       </a>
-      <a href="{{ url_for('reports.view_reports') }}" class="nav-link {% if 'reports' in request.endpoint %}active{% endif %}">
+      {% endif %}
+      <a href="{{ url_for('reports.view_reports') }}" class="nav-link {% if request.endpoint and 'reports' in request.endpoint %}active{% endif %}">
         <i class="fa-solid fa-file-lines"></i> <span>Reports & Exports</span>
       </a>
 
@@ -79,12 +95,14 @@
       <a href="{{ url_for('devices.list_devices') }}" class="nav-link {% if request.endpoint == 'devices.list_devices' %}active{% endif %}">
         <i class="fa-solid fa-microchip"></i> <span>Device Status</span>
       </a>
+      {# Hidden Camera Config & ANPR Test Mode as requested
       <a href="{{ url_for('devices.camera_config') }}" class="nav-link {% if request.endpoint == 'devices.camera_config' %}active{% endif %}">
         <i class="fa-solid fa-video"></i> <span>Camera Config</span>
       </a>
       <a href="{{ url_for('devices.anpr_test') }}" class="nav-link {% if request.endpoint == 'devices.anpr_test' %}active{% endif %}">
         <i class="fa-solid fa-camera"></i> <span>ANPR Test Mode</span>
       </a>
+      #}
 
       {% if current_user.is_admin %}
       <div class="nav-heading">Administration</div>
@@ -108,7 +126,7 @@
       <div class="d-flex align-items-center justify-content-between">
         <div class="text-truncate">
           <div class="text-white small fw-semibold">{{ current_user.full_name }}</div>
-          <div class="text-muted" style="font-size: 0.7rem;">{{ current_user.role }}</div>
+          <div class="text-muted" style="font-size: 0.7rem;">{% if current_user.role in ['MAINGATE', 'MTGATE', 'MT GATE'] %}MT GATE OPERATOR{% else %}{{ current_user.role }}{% endif %}</div>
         </div>
         <a href="{{ url_for('auth.logout') }}" class="btn btn-sm btn-outline-danger" title="Logout">
           <i class="fa-solid fa-power-off"></i>
@@ -136,26 +154,17 @@
       </div>
 
       <div class="d-flex align-items-center gap-3">
-        <!-- Interactive Gate Direction Switcher for Single-Reader Setup -->
-        <form method="POST" action="{{ url_for('movements.set_gate_direction') }}" id="gate-direction-form" class="d-inline-flex align-items-center gap-1">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-          <span class="small text-muted me-1 d-none d-md-inline fw-semibold"><i class="fa-solid fa-arrows-left-right me-1 text-primary"></i>Direction:</span>
-          <div class="btn-group btn-group-sm" role="group">
-            <button type="submit" name="direction" value="ENTRY" id="btn-nav-dir-entry" class="btn {% if gate_direction_mode == 'ENTRY_ONLY' or gate_direction_mode == 'ENTRY' or gate_direction_mode == 'MANUAL_DIRECTION' %}btn-success fw-bold text-white{% else %}btn-outline-secondary{% endif %}" title="Set reader to ENTRY mode">
-              <i class="fa-solid fa-arrow-right-to-bracket me-1"></i>ENTRY (IN)
-            </button>
-            <button type="submit" name="direction" value="EXIT" id="btn-nav-dir-exit" class="btn {% if gate_direction_mode == 'EXIT_ONLY' or gate_direction_mode == 'EXIT' %}btn-info fw-bold text-white{% else %}btn-outline-secondary{% endif %}" title="Set reader to EXIT mode">
-              <i class="fa-solid fa-arrow-right-from-bracket me-1"></i>EXIT (OUT)
-            </button>
-          </div>
-        </form>
-
         <div class="vr mx-1"></div>
-
-        <div class="text-muted small d-flex align-items-center gap-1">
-          <i class="fa-regular fa-clock"></i>
-          <span id="live-clock" class="fw-semibold text-dark">--:--:--</span>
+        <div class="d-flex align-items-center gap-1">
+          <i class="fa-regular fa-calendar-days text-primary"></i>
+          <span id="live-date" class="fw-semibold text-secondary">--</span>
         </div>
+        <div class="vr mx-1"></div>
+        <div class="d-flex align-items-center gap-1">
+          <i class="fa-regular fa-clock text-primary"></i>
+          <span id="live-clock" class="fw-semibold text-dark font-monospace">--:--:--</span>
+        </div>
+        <span class="badge bg-light text-muted border border-secondary-subtle" style="font-size: 0.65rem;">SERVER</span>
       </div>
     </header>
     {% endif %}
@@ -185,10 +194,29 @@
   </main>
 </div>
 
+{% if current_user.is_authenticated %}
+{% include "_scan_confirmation_modal.html" %}
+{% endif %}
+
 <!-- Scripts -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}?v=13.0"></script>
+{% if session.get('voice_announce') %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      if (typeof speakVehicleDetection === 'function') {
+        if (typeof _suppressGateFeedSpeechUntil !== 'undefined') {
+          _suppressGateFeedSpeechUntil = Date.now() + 6000;
+        }
+        speakVehicleDetection("{{ session.voice_announce.plate }}", "{{ session.voice_announce.driver }}", "{{ session.voice_announce.dir }}", false, true);
+      }
+    }, 600);
+  });
+</script>
+{% set _ = session.pop('voice_announce', None) %}
+{% endif %}
 {% block extra_scripts %}{% endblock %}
 
 </body>

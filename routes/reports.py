@@ -35,7 +35,7 @@ def view_reports():
         end_date=end_date,
         vehicle_number=vehicle_number,
         status=status,
-        now=datetime.utcnow()
+        now=datetime.now()
     )
 
 @reports_bp.route('/reports/export/<export_format>')
@@ -55,7 +55,7 @@ def export_report(export_format):
         status=status
     )
 
-    timestamp_str = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename_base = f"{report_type}_{timestamp_str}"
 
     if export_format == 'csv':

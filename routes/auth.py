@@ -38,7 +38,7 @@ def login():
                 )
                 return render_template('login.html')
 
-            user.last_login = datetime.utcnow()
+            user.last_login = datetime.now()
             db.session.commit()
             login_user(user, remember=remember)
             session.permanent = True
@@ -49,7 +49,6 @@ def login():
                 user=user
             )
 
-            flash(f'Welcome back, {user.full_name}!', 'success')
             next_page = request.args.get('next')
             return redirect(next_page or url_for('dashboard.index'))
         else:
@@ -117,7 +116,6 @@ def first_time_setup():
         )
 
         login_user(admin)
-        flash('Initial Administrator account created successfully! Welcome to the Gate Management System.', 'success')
         return redirect(url_for('dashboard.index'))
 
     return render_template('setup_wizard.html')

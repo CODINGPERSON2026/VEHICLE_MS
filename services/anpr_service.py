@@ -58,7 +58,7 @@ class ANPRService:
 
         # Record ANPR Event
         anpr_event = ANPREvent(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(),
             camera_id=camera_id,
             captured_plate=norm_plate,
             confidence=confidence,

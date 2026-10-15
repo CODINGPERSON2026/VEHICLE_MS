@@ -35,7 +35,16 @@ def create_app(config_name=None):
     csrf.exempt('routes.rfid_api.api_device_heartbeat')
     csrf.exempt('routes.rfid_api.api_enroll_scan')
     csrf.exempt('routes.rfid_api.api_barrier_status')
+    csrf.exempt('routes.rfid_api.api_lookup_scan')
+    csrf.exempt('routes.rfid_api.api_cancel_pending_scan')
+    csrf.exempt('routes.rfid_api.api_device_alcohol_alert')
+    csrf.exempt('routes.rfid_api.api_device_sobriety_reading')
+    csrf.exempt('routes.rfid_api.api_update_pending_driver')
+    csrf.exempt('routes.movements.api_confirm_scan')
+    csrf.exempt('routes.movements.api_report_alcohol')
     csrf.exempt('routes.drivers.api_assign_movement_driver')
+    csrf.exempt('routes.tts_api.speak')
+    csrf.exempt('routes.vehicles.create_vehicle')
 
     # Setup Flask-Login
     login_manager.login_view = 'auth.login'
@@ -57,6 +66,7 @@ def create_app(config_name=None):
     from routes.reports import reports_bp
     from routes.devices import devices_bp
     from routes.settings import settings_bp
+    from routes.tts_api import tts_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
@@ -67,6 +77,7 @@ def create_app(config_name=None):
     app.register_blueprint(reports_bp)
     app.register_blueprint(devices_bp)
     app.register_blueprint(settings_bp)
+    app.register_blueprint(tts_bp)
 
     # Initialize database tables & defaults
     init_db(app)

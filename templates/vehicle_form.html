@@ -17,7 +17,7 @@
       </div>
 
       <div class="card-body p-4">
-        <form method="POST">
+        <form method="POST" action="{{ url_for('vehicles.create_vehicle') if not vehicle else url_for('vehicles.edit_vehicle', vehicle_id=vehicle.id) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
           <h6 class="fw-bold text-primary mb-3"><i class="fa-solid fa-car me-2"></i>Vehicle Information</h6>

@@ -46,9 +46,9 @@
       <i class="fa-solid fa-file-csv me-1"></i>Export CSV
     </a>
     {% if current_user.role != Role.REPORT_VIEWER %}
-    <a href="{{ url_for('vehicles.create_vehicle') }}" class="btn btn-primary btn-sm shadow-sm">
+    <button class="btn btn-primary btn-sm shadow-sm" data-bs-toggle="modal" data-bs-target="#registerVehicleModal">
       <i class="fa-solid fa-plus me-1"></i>Register New Vehicle
-    </a>
+    </button>
     {% endif %}
   </div>
 </div>
@@ -63,6 +63,7 @@
           <th>Type</th>
           <th>Date of Issue</th>
           <th>Custodian &amp; Army No</th>
+          <th>Location</th>
           <th>Status</th>
           <th class="text-end">Actions</th>
         </tr>
@@ -85,6 +86,13 @@
             <div class="text-muted font-monospace" style="font-size: 0.75rem;">
               {{ v.armynumber or '' }}{% if v.armynumber and v.mobile_number %} &bull; {% endif %}{{ v.mobile_number or '' }}
             </div>
+          </td>
+          <td>
+            {% if v.current_vehicle_location == 'OUT' %}
+            <span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-semibold"><i class="fa-solid fa-arrow-right-from-bracket me-1"></i>OUT</span>
+            {% else %}
+            <span class="badge bg-success-subtle text-success border border-success-subtle fw-semibold"><i class="fa-solid fa-warehouse me-1"></i>INSIDE</span>
+            {% endif %}
           </td>
           <td>
             {% if not v.is_active %}
@@ -122,6 +130,62 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+</div>
+
+<!-- Modal: Register New Vehicle -->
+<div class="modal fade" id="registerVehicleModal" tabindex="-1" aria-labelledby="registerVehicleModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow">
+      <div class="modal-header bg-primary text-white">
+        <h6 class="modal-title fw-bold" id="registerVehicleModalLabel">
+          <i class="fa-solid fa-car me-2"></i>Register New Vehicle
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="POST" action="{{ url_for('vehicles.create_vehicle') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">BA / Registration Number *</label>
+            <input type="text" class="form-control font-monospace text-uppercase" name="registration_number" placeholder="e.g. BA1234 / MH12AB1234" required autofocus>
+            <div class="form-text small">Enter vehicle BA number or number plate.</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Vehicle Type *</label>
+            <select class="form-select" name="vehicle_type" required>
+              {% for t in types %}
+              <option value="{{ t }}">{{ t }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Date of Issue (Optional)</label>
+            <input type="date" class="form-control" name="issue_date">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Custodian Name (Optional)</label>
+            <input type="text" class="form-control" name="custodian_name" placeholder="e.g. Subedar Rajesh Sharma">
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Army Number</label>
+              <input type="text" class="form-control font-monospace text-uppercase" name="armynumber" placeholder="e.g. JC-847291A">
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold">Mobile Number</label>
+              <input type="tel" class="form-control" name="mobile_number" placeholder="e.g. 9876543210">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer bg-light border-0">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm px-4 shadow-sm">
+            <i class="fa-solid fa-floppy-disk me-1"></i>Save Vehicle Record
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 {% endblock %}

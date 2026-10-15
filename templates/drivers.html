@@ -49,6 +49,7 @@
           <th>Company &amp; Section</th>
           <th>Hill Driving</th>
           <th>Drive Status</th>
+          <th>Assigned RFID</th>
           <th>Mobile</th>
           <th class="text-end">Actions</th>
         </tr>
@@ -93,6 +94,13 @@
             {% endif %}
             {% else %}
             <span class="badge bg-danger"><i class="fa-solid fa-ban me-1"></i>NOT AUTHORIZED</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if d.primary_rfid_uid and d.primary_rfid_uid != '-' %}
+            <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace"><i class="fa-solid fa-id-card me-1"></i>{{ d.primary_rfid_uid }}</span>
+            {% else %}
+            <span class="text-muted small fst-italic">None</span>
             {% endif %}
           </td>
           <td class="small">{{ d.mobile_number or '-' }}</td>
@@ -237,7 +245,7 @@
         </div>
         {% else %}
         <tr>
-          <td colspan="7" class="text-center py-5 text-muted">
+          <td colspan="8" class="text-center py-5 text-muted">
             <i class="fa-solid fa-id-badge fs-1 d-block mb-2 text-secondary"></i>
             No driver profiles found.
           </td>

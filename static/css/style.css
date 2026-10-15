@@ -49,8 +49,12 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  transition: all 0.3s ease;
   z-index: 1000;
+}
+
+/* Enable smooth transition only when user clicks toggle (prevents page switch flicker) */
+.sidebar.transition-ready {
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-brand {
@@ -443,4 +447,49 @@ body {
     border: none !important;
     box-shadow: none !important;
   }
+}
+
+/* ---------------- Sobriety Clearance Button Glow ---------------- */
+@keyframes btn-glow-amber-pulse {
+  0% {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.7), 0 0 15px rgba(245, 158, 11, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(245, 158, 11, 1), 0 0 45px rgba(245, 158, 11, 0.75), inset 0 0 12px rgba(255, 255, 255, 0.6);
+    transform: scale(1.02);
+  }
+  100% {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.7), 0 0 15px rgba(245, 158, 11, 0.4);
+    transform: scale(1);
+  }
+}
+
+@keyframes btn-glow-green-pulse {
+  0% {
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.7), 0 0 15px rgba(16, 185, 129, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(16, 185, 129, 1), 0 0 45px rgba(16, 185, 129, 0.75), inset 0 0 12px rgba(255, 255, 255, 0.6);
+    transform: scale(1.02);
+  }
+  100% {
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.7), 0 0 15px rgba(16, 185, 129, 0.4);
+    transform: scale(1);
+  }
+}
+
+.btn-glow-out {
+  animation: btn-glow-amber-pulse 1.8s infinite !important;
+  border: 2px solid #ffffff !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
+}
+
+.btn-glow-in {
+  animation: btn-glow-green-pulse 1.8s infinite !important;
+  border: 2px solid #ffffff !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
 }

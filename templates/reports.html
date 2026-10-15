@@ -1,98 +1,392 @@
 {% extends "base.html" %}
 
-{% block title %}Reports & Analytics - {{ system_name }}{% endblock %}
+{% block title %}Reports & Compliance Analytics - {{ system_name }}{% endblock %}
 {% block page_title %}Reports & Compliance Analytics{% endblock %}
 
 {% block content %}
+<style>
+  .plate-badge {
+    background: #0f172a;
+    color: #f8fafc;
+    border: 1px solid #334155;
+    letter-spacing: 0.08em;
+    padding: 0.2rem 0.6rem;
+    border-radius: 0.35rem;
+    font-weight: 700;
+  }
+
+  /* Hidden on screen */
+  .military-print-footer,
+  .print-tfoot-spacer {
+    display: none !important;
+  }
+
+  @media print {
+    @page {
+      size: A4 portrait;
+      margin: 12mm 10mm 28mm 10mm;
+      /* 28mm bottom margin leaves space for repeating footer */
+    }
+
+    .no-print,
+    header,
+    aside,
+    .sidebar,
+    .btn,
+    form,
+    #report-search-box {
+      display: none !important;
+    }
+
+    .app-wrapper {
+      display: block !important;
+    }
+
+    .page-container {
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    body {
+      background: #ffffff !important;
+      color: #000000 !important;
+      font-size: 8.5pt !important;
+      padding-bottom: 24mm !important;
+    }
+
+    .print-only {
+      display: block !important;
+    }
+
+    .card {
+      border: 1px solid #cccccc !important;
+      box-shadow: none !important;
+    }
+
+    table {
+      font-size: 8.5pt !important;
+      width: 100% !important;
+    }
+
+    thead {
+      display: table-header-group !important;
+    }
+
+    tfoot {
+      display: table-footer-group !important;
+    }
+
+    .print-tfoot-spacer {
+      display: table-footer-group !important;
+    }
+
+    tr {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+
+    /* Fixed military signature footer repeated at the bottom of EVERY printed sheet */
+    .military-print-footer {
+      display: block !important;
+      position: fixed !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      width: 100% !important;
+      background: #ffffff !important;
+      padding-top: 6px !important;
+      padding-bottom: 3px !important;
+      border-top: 1.5px solid #000000 !important;
+      z-index: 99999 !important;
+    }
+
+    .military-print-footer .sig-row {
+      display: flex !important;
+      flex-direction: row !important;
+      justify-content: space-between !important;
+      align-items: flex-end !important;
+      text-align: center !important;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 5mm !important;
+    }
+
+    .military-print-footer .sig-item {
+      flex: 1 !important;
+      text-align: center !important;
+      padding: 0 10px !important;
+    }
+
+    .military-print-footer .sig-line {
+      margin-bottom: 6px !important;
+      font-family: monospace !important;
+      font-weight: 700 !important;
+      letter-spacing: 1px !important;
+      color: #000000 !important;
+    }
+
+    .military-print-footer .sig-label {
+      font-weight: 800 !important;
+      font-size: 9.5pt !important;
+      letter-spacing: 0.5px !important;
+      text-transform: uppercase !important;
+      color: #000000 !important;
+    }
+  }
+</style>
+
+<!-- Military Command Heading (Print Header) -->
+<div class="d-none print-only mb-4 text-center border-bottom pb-3">
+  <h3 class="fw-bold mb-1 text-uppercase">15 CORPS ENGG SIGNAL REGT MT MGT</h3>
+  <h5 class="fw-semibold text-secondary mb-1">Vehicle Monitoring System</h5>
+  <div class="small text-muted">Generated: {{ now.strftime('%d-%b-%Y %H:%M:%S') }}</div>
+</div>
+
 <!-- Report Configuration & Filter Bar -->
-<div class="card border-0 shadow-sm rounded-4 mb-4 no-print">
-  <div class="card-body p-4">
-    <form method="GET" action="{{ url_for('reports.view_reports') }}" class="row g-3">
-      <div class="col-md-4">
-        <label class="form-label small fw-semibold">Report Category *</label>
-        <select class="form-select fw-semibold text-primary" name="type" onchange="this.form.submit()">
+<div class="card border-0 shadow-sm rounded-4 mb-4 no-print bg-white">
+  <div class="card-body p-3 p-md-4">
+    <form method="GET" action="{{ url_for('reports.view_reports') }}" id="report-filter-form"
+      class="row g-3 align-items-end">
+      <input type="hidden" name="type" id="filter-report-type" value="{{ report_type }}">
+
+      <div class="col-12 col-md-4 col-xl-3">
+        <label class="form-label small fw-semibold text-secondary">Report Category *</label>
+        <select class="form-select fw-semibold text-primary"
+          onchange="document.getElementById('filter-report-type').value=this.value; this.form.submit()">
           {% for r_key, r_title in report_titles.items() %}
-          <option value="{{ r_key }}" {% if report_type == r_key %}selected{% endif %}>{{ r_title }}</option>
+          <option value="{{ r_key }}" {% if report_type==r_key %}selected{% endif %}>{{ r_title }}</option>
           {% endfor %}
         </select>
       </div>
 
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">Start Date</label>
-        <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
+      <div class="col-6 col-md-2 col-xl-2">
+        <label class="form-label small fw-semibold text-secondary">Start Date</label>
+        <input type="date" class="form-control" name="start_date" id="filter-start-date" value="{{ start_date }}">
       </div>
 
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">End Date</label>
-        <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
+      <div class="col-6 col-md-2 col-xl-2">
+        <label class="form-label small fw-semibold text-secondary">End Date</label>
+        <input type="date" class="form-control" name="end_date" id="filter-end-date" value="{{ end_date }}">
       </div>
 
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">Vehicle Plate</label>
-        <input type="text" class="form-control font-monospace" name="vehicle_number" value="{{ vehicle_number }}" placeholder="e.g. MH12AB1234">
+      <div class="col-12 col-md-2 col-xl-2">
+        <label class="form-label small fw-semibold text-secondary">Vehicle Registration</label>
+        <input type="text" class="form-control font-monospace" name="vehicle_number" value="{{ vehicle_number }}"
+          placeholder="e.g. MH12AB1234">
       </div>
 
-      <div class="col-md-2 d-flex align-items-end gap-2">
-        <button type="submit" class="btn btn-primary flex-grow-1 shadow-sm"><i class="fa-solid fa-magnifying-glass me-1"></i>Generate</button>
-        <a href="{{ url_for('reports.view_reports', type=report_type) }}" class="btn btn-outline-secondary" title="Reset"><i class="fa-solid fa-rotate-left"></i></a>
+      <div class="col-12 col-md-2 col-xl-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary flex-grow-1 shadow-sm fw-semibold">
+          <i class="fa-solid fa-magnifying-glass me-1"></i>Generate
+        </button>
+        <a href="{{ url_for('reports.view_reports', type=report_type) }}" class="btn btn-outline-secondary"
+          title="Reset Filters">
+          <i class="fa-solid fa-rotate-left"></i>
+        </a>
+      </div>
+
+      <!-- Quick Date Presets -->
+      <div class="col-12 pt-1 border-top mt-3 d-flex flex-wrap align-items-center gap-2">
+        <span class="small text-muted fw-semibold me-1"><i class="fa-solid fa-bolt text-warning me-1"></i>Date
+          Presets:</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2"
+          style="font-size: 0.75rem;" onclick="setDatePreset('today')">Today</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2"
+          style="font-size: 0.75rem;" onclick="setDatePreset('yesterday')">Yesterday</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2"
+          style="font-size: 0.75rem;" onclick="setDatePreset('last7')">Last 7 Days</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill py-0 px-2"
+          style="font-size: 0.75rem;" onclick="setDatePreset('this_month')">This Month</button>
+        <button type="button" class="btn btn-sm btn-link text-muted text-decoration-none py-0 px-1"
+          style="font-size: 0.75rem;" onclick="clearDatePresets()">Clear Dates</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- Report Header & Export Action Bar -->
-<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
-  <div>
-    <h5 class="fw-bold text-dark mb-0">{{ report_title }}</h5>
-    <span class="text-muted small">Generated: {{ now.strftime('%Y-%m-%d %H:%M:%S UTC') }} | Total Records: <strong>{{ rows|length }}</strong></span>
-  </div>
+<!-- Report Header, In-Table Search & Export Action Bar -->
+<div class="card border-0 shadow-sm rounded-4 mb-3 bg-white no-print">
+  <div class="card-body p-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+    <div>
+      <div class="d-flex align-items-center gap-2">
+        <h5 class="fw-bold text-dark mb-0">{{ report_title }}</h5>
+        <span class="badge bg-primary rounded-pill">{{ rows|length }} Records</span>
+      </div>
+      <div class="text-muted small mt-1">
+        Generated: <strong>{{ now.strftime('%d-%b-%Y %H:%M:%S') }}</strong> | Security Classification:
+        <strong>RESTRICTED</strong>
+      </div>
+    </div>
 
-  <div class="d-flex gap-2 no-print">
-    <button type="button" class="btn btn-outline-dark btn-sm" onclick="window.print()">
-      <i class="fa-solid fa-print me-1"></i>Print
-    </button>
-    <a href="{{ url_for('reports.export_report', export_format='csv', type=report_type, start_date=start_date, end_date=end_date, vehicle_number=vehicle_number, status=status) }}" class="btn btn-outline-success btn-sm">
-      <i class="fa-solid fa-file-csv me-1"></i>CSV
-    </a>
-    <a href="{{ url_for('reports.export_report', export_format='excel', type=report_type, start_date=start_date, end_date=end_date, vehicle_number=vehicle_number, status=status) }}" class="btn btn-outline-primary btn-sm">
-      <i class="fa-solid fa-file-excel me-1"></i>Excel (XLSX)
-    </a>
-    <a href="{{ url_for('reports.export_report', export_format='pdf', type=report_type, start_date=start_date, end_date=end_date, vehicle_number=vehicle_number, status=status) }}" class="btn btn-outline-danger btn-sm">
-      <i class="fa-solid fa-file-pdf me-1"></i>PDF
-    </a>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <!-- Real-Time Client Search Bar -->
+      <div class="input-group input-group-sm" style="width: 240px;">
+        <span class="input-group-text bg-light text-muted border-end-0"><i class="fa-solid fa-filter"></i></span>
+        <input type="text" id="report-client-search" class="form-control border-start-0 bg-light"
+          placeholder="Instant filter rows..." onkeyup="filterTableRows()">
+      </div>
+
+      <!-- Export Buttons -->
+      <div class="btn-group btn-group-sm shadow-sm" role="group">
+        <button type="button" class="btn btn-outline-dark" onclick="window.print()" title="Print Official Sheet">
+          <i class="fa-solid fa-print me-1"></i>Print
+        </button>
+        <a href="{{ url_for('reports.export_report', export_format='csv', type=report_type, start_date=start_date, end_date=end_date, vehicle_number=vehicle_number, status=status) }}"
+          class="btn btn-outline-success" title="Download CSV">
+          <i class="fa-solid fa-file-csv me-1"></i>CSV
+        </a>
+        <a href="{{ url_for('reports.export_report', export_format='excel', type=report_type, start_date=start_date, end_date=end_date, vehicle_number=vehicle_number, status=status) }}"
+          class="btn btn-outline-primary" title="Download Excel XLSX">
+          <i class="fa-solid fa-file-excel me-1"></i>Excel
+        </a>
+        <a href="{{ url_for('reports.export_report', export_format='pdf', type=report_type, start_date=start_date, end_date=end_date, vehicle_number=vehicle_number, status=status) }}"
+          class="btn btn-outline-danger" title="Download PDF">
+          <i class="fa-solid fa-file-pdf me-1"></i>PDF
+        </a>
+      </div>
+    </div>
   </div>
 </div>
 
 <!-- Report Data Preview Table -->
-<div class="card border-0 shadow-sm rounded-4">
+<div class="card border-0 shadow-sm rounded-4 bg-white overflow-hidden mb-4">
   <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
-      <thead class="table-light small text-uppercase text-secondary">
+    <table class="table table-hover align-middle mb-0" id="report-data-table">
+      <thead class="table-light small text-uppercase text-secondary border-bottom">
         <tr>
           {% for h in headers %}
-          <th>{{ h }}</th>
+          <th class="{% if loop.first %}text-center{% endif %} px-3 py-3">{{ h }}</th>
           {% endfor %}
         </tr>
       </thead>
-      <tbody>
+      <tbody id="report-table-body">
         {% for r in rows %}
         <tr>
           {% for cell in r %}
-          <td class="{% if loop.first %}text-center text-muted small{% elif 'Plate' in headers[loop.index0] or 'Vehicle No' in headers[loop.index0] %}font-monospace fw-bold text-dark{% elif 'Time' in headers[loop.index0] or 'Date' in headers[loop.index0] %}font-monospace small{% else %}small{% endif %}">
-            {{ cell if cell is not none else '-' }}
+          <td
+            class="px-3 py-2 {% if loop.first %}text-center text-muted small{% elif 'Plate' in headers[loop.index0] or 'Vehicle No' in headers[loop.index0] or 'BA Number' in headers[loop.index0] %}font-monospace fw-bold text-dark{% elif 'Time' in headers[loop.index0] or 'Date' in headers[loop.index0] or 'Timestamp' in headers[loop.index0] %}font-monospace small text-muted{% else %}small{% endif %}">
+            {% if cell is none or cell == '' %}
+            <span class="text-muted">-</span>
+            {% elif 'Plate' in headers[loop.index0] or 'Vehicle No' in headers[loop.index0] or 'BA Number' in
+            headers[loop.index0] %}
+            <span class="plate-badge">{{ cell }}</span>
+            {% elif cell in ['AUTHORIZED', 'INSIDE', 'ONLINE', 'MATCHED'] %}
+            <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i
+                class="fa-solid fa-circle-check me-1"></i>{{ cell }}</span>
+            {% elif cell in ['BLOCKED', 'ENTRY DENIED', 'OFFLINE', 'DENIED', 'FAIL'] %}
+            <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1"><i
+                class="fa-solid fa-ban me-1"></i>{{ cell }}</span>
+            {% elif cell in ['OUTSIDE', 'EXPIRED', 'UNAUTHORIZED', 'WARN'] %}
+            <span class="badge bg-warning-subtle text-warning border border-warning-subtle px-2 py-1"><i
+                class="fa-solid fa-triangle-exclamation me-1"></i>{{ cell }}</span>
+            {% elif cell in ['MANUAL', 'MANUAL REVIEW'] %}
+            <span class="badge bg-info-subtle text-info border border-info-subtle px-2 py-1"><i
+                class="fa-solid fa-hand me-1"></i>{{ cell }}</span>
+            {% else %}
+            {{ cell }}
+            {% endif %}
           </td>
           {% endfor %}
         </tr>
         {% else %}
-        <tr>
+        <tr id="empty-data-row">
           <td colspan="{{ headers|length if headers else 5 }}" class="text-center py-5 text-muted">
-            <i class="fa-solid fa-folder-open fs-1 d-block mb-2 text-secondary"></i>
-            No records found for the selected report filters.
+            <i class="fa-solid fa-folder-open fs-1 d-block mb-3 text-secondary opacity-50"></i>
+            <h6 class="fw-bold mb-1">No Records Found</h6>
+            <p class="small text-muted mb-0">No records match the selected date filters and report parameters.</p>
           </td>
         </tr>
         {% endfor %}
       </tbody>
+      <tfoot class="print-tfoot-spacer">
+        <tr style="height: 22mm; border: none;">
+          <td colspan="{{ headers|length if headers else 10 }}"
+            style="border: none !important; background: transparent !important; padding: 0 !important;"></td>
+        </tr>
+      </tfoot>
     </table>
   </div>
 </div>
+
+<!-- Official Military Audit & Signatures Block (Print Only - Appears on every printed page) -->
+<div class="military-print-footer">
+  <div class="sig-row">
+    <div class="sig-item">
+      <div class="sig-line">_____________________________</div>
+      <div class="sig-label">SIG OF MT NCO</div>
+    </div>
+    <div class="sig-item">
+      <div class="sig-line">_____________________________</div>
+      <div class="sig-label">SIG OF MT JCO</div>
+    </div>
+    <div class="sig-item">
+      <div class="sig-line">_____________________________</div>
+      <div class="sig-label">SIG OF MTO</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // Quick Client-Side Table Filter
+  function filterTableRows() {
+    const input = document.getElementById('report-client-search');
+    const filter = input.value.toUpperCase();
+    const table = document.getElementById('report-table-body');
+    const tr = table.getElementsByTagName('tr');
+
+    for (let i = 0; i < tr.length; i++) {
+      if (tr[i].id === 'empty-data-row') continue;
+      const text = tr[i].textContent || tr[i].innerText;
+      if (text.toUpperCase().indexOf(filter) > -1) {
+        tr[i].style.display = "";
+      } else {
+        tr[i].style.display = "none";
+      }
+    }
+  }
+
+  // Quick Date Preset Setter
+  function setDatePreset(preset) {
+    const startInput = document.getElementById('filter-start-date');
+    const endInput = document.getElementById('filter-end-date');
+    const today = new Date();
+
+    const formatDate = (d) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    if (preset === 'today') {
+      const str = formatDate(today);
+      startInput.value = str;
+      endInput.value = str;
+    } else if (preset === 'yesterday') {
+      const yest = new Date(today);
+      yest.setDate(yest.getDate() - 1);
+      const str = formatDate(yest);
+      startInput.value = str;
+      endInput.value = str;
+    } else if (preset === 'last7') {
+      const past7 = new Date(today);
+      past7.setDate(past7.getDate() - 7);
+      startInput.value = formatDate(past7);
+      endInput.value = formatDate(today);
+    } else if (preset === 'this_month') {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      startInput.value = formatDate(firstDay);
+      endInput.value = formatDate(today);
+    }
+    document.getElementById('report-filter-form').submit();
+  }
+
+  function clearDatePresets() {
+    document.getElementById('filter-start-date').value = '';
+    document.getElementById('filter-end-date').value = '';
+    document.getElementById('report-filter-form').submit();
+  }
+</script>
 {% endblock %}

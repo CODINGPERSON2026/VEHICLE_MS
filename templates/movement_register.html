@@ -66,11 +66,9 @@
           <th>Vehicle Number</th>
           <th>Type</th>
           <th>Driver</th>
-          <th>RFID UID</th>
           <th>Entry Time</th>
           <th>Exit Time</th>
           <th>Duration</th>
-          <th>Gate / Device</th>
           <th>Status</th>
           <th>Remarks</th>
         </tr>
@@ -85,16 +83,14 @@
             {% if m.is_demo %}<span class="badge bg-light text-muted border ms-1" style="font-size: 0.6rem;">DEMO</span>{% endif %}
           </td>
           <td class="small">
-            <span class="fw-semibold">{{ m.driver_name or (m.vehicle.driver_name if m.vehicle else '-') }}</span>
-            {% if m.driver_name and m.vehicle and m.vehicle.driver_name and m.driver_name != m.vehicle.driver_name %}
-            <small class="text-muted d-block" style="font-size: 0.7rem;">Owner: {{ m.vehicle.driver_name }}</small>
+            <span class="fw-semibold">{{ m.driver_name or (m.driver.name if m.driver else (m.rfid_card.driver.name if m.rfid_card and m.rfid_card.driver else '-')) }}</span>
+            {% if m.vehicle and m.vehicle.custodian_name %}
+            <small class="text-muted d-block" style="font-size: 0.7rem;">Custodian: {{ m.vehicle.custodian_name }}</small>
             {% endif %}
           </td>
-          <td class="font-monospace small text-primary">{{ m.rfid_card.uid if m.rfid_card else '-' }}</td>
           <td class="small font-monospace">{{ m.entry_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
           <td class="small font-monospace">{{ m.exit_time.strftime('%Y-%m-%d %H:%M:%S') if m.exit_time else '-' }}</td>
           <td class="small fw-semibold">{{ m.formatted_duration }}</td>
-          <td class="small text-muted">{{ m.entry_device.device_name if m.entry_device else 'System' }}</td>
           <td>
             {% if m.status == 'INSIDE' %}<span class="badge bg-success">INSIDE</span>
             {% elif m.status == 'OUTSIDE' %}<span class="badge bg-info">OUTSIDE</span>
@@ -106,7 +102,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="11" class="text-center py-5 text-muted">
+          <td colspan="9" class="text-center py-5 text-muted">
             <i class="fa-solid fa-book-open fs-1 d-block mb-2 text-secondary"></i>
             No movement records found for the selected filter.
           </td>

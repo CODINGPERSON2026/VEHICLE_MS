@@ -23,16 +23,18 @@ class RFIDCard(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     uid = db.Column(db.String(32), unique=True, nullable=False, index=True)
     vehicle_id = db.Column(db.Integer, db.ForeignKey('vehicles.id'), nullable=True, index=True)
+    driver_id = db.Column(db.Integer, db.ForeignKey('drivers.id'), nullable=True, index=True)
     card_status = db.Column(db.String(32), nullable=False, default=CardStatus.ACTIVE, index=True)
     assigned_date = db.Column(db.Date, default=date.today, nullable=True)
     expiry_date = db.Column(db.Date, nullable=True)
     remarks = db.Column(db.Text, nullable=True)
     is_demo = db.Column(db.Boolean, default=False, nullable=False)
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
     
-    # Movements associated with this card
+    # Relationships
+    driver = db.relationship('Driver', backref=db.backref('rfid_cards', lazy=True), lazy=True)
     movements = db.relationship('VehicleMovement', backref='rfid_card', lazy='dynamic')
     
     def is_valid(self):

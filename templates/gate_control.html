@@ -23,6 +23,11 @@
     </div>
 
     <div class="col-md-5 d-flex justify-content-md-end gap-2 flex-wrap">
+      <button class="btn btn-outline-primary btn-sm px-3 py-1 fw-semibold shadow-sm d-flex align-items-center gap-1" type="button"
+        onclick="testVoiceAnnouncement()" title="Test Voice Output">
+        <i class="fa-solid fa-bullhorn"></i>
+        <span>Test Voice</span>
+      </button>
       {% if current_user.role != Role.REPORT_VIEWER %}
       <button class="btn btn-warning shadow-sm btn-sm" data-bs-toggle="modal" data-bs-target="#manualOverrideModal">
         <i class="fa-solid fa-hand me-1"></i>Manual Check-In / Override
@@ -34,6 +39,9 @@
       <a href="{{ url_for('movements.currently_inside') }}" class="btn btn-outline-primary btn-sm position-relative">
         <i class="fa-solid fa-warehouse me-1"></i>Inside (<span id="live-inside-count">{{ inside_count }}</span>)
       </a>
+      <span class="badge bg-light text-dark border px-2 py-2 align-self-center shadow-sm" id="nav-mq3-pill" title="Live Hardware MQ-3 Sensor Reading">
+        <i class="fa-solid fa-gauge-high me-1 text-primary"></i>MQ-3: <strong id="nav-mq3-val">--</strong>
+      </span>
     </div>
   </div>
 

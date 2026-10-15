@@ -20,12 +20,16 @@ class VehicleService:
         if search:
             s = f"%{search.strip()}%"
             norm_s = normalize_plate(search)
-            query = query.filter(
-                (Vehicle.registration_number.ilike(f"%{norm_s}%") if norm_s else False) |
-                Vehicle.custodian_name.ilike(s) |
-                Vehicle.armynumber.ilike(s) |
+            filters = [
+                Vehicle.registration_number.ilike(s),
+                Vehicle.custodian_name.ilike(s),
+                Vehicle.armynumber.ilike(s),
                 Vehicle.mobile_number.ilike(s)
-            )
+            ]
+            if norm_s:
+                filters.append(Vehicle.registration_number.ilike(f"%{norm_s}%"))
+                filters.append(db.func.replace(Vehicle.registration_number, '-', '').ilike(f"%{norm_s}%"))
+            query = query.filter(db.or_(*filters))
             
         if vehicle_type and vehicle_type in VehicleType.CHOICES:
             query = query.filter_by(vehicle_type=vehicle_type)
@@ -41,10 +45,15 @@ class VehicleService:
 
     @staticmethod
     def get_by_plate(plate_number):
-        normalized = normalize_plate(plate_number)
-        if not normalized:
+        if not plate_number:
             return None
-        return Vehicle.query.filter_by(registration_number=normalized).first()
+        raw = plate_number.strip().upper()
+        normalized = normalize_plate(plate_number)
+        return Vehicle.query.filter(
+            (Vehicle.registration_number == raw) |
+            (Vehicle.registration_number == normalized) |
+            (db.func.replace(Vehicle.registration_number, '-', '') == normalized)
+        ).first()
 
     @staticmethod
     def create_vehicle(data, user=None, is_demo=False):
@@ -80,6 +89,7 @@ class VehicleService:
             armynumber=armynumber,
             mobile_number=data.get('mobile_number', '').strip(),
             auth_status=data.get('auth_status', AuthStatus.AUTHORIZED),
+            current_vehicle_location='INSIDE',
             is_active=True,
             is_demo=is_demo
         )

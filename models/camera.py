@@ -23,7 +23,7 @@ class CameraConfig(db.Model):
     resolution = db.Column(db.String(32), default='1920x1080')
     is_enabled = db.Column(db.Boolean, default=True, nullable=False)
     last_seen = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
     
     anpr_events = db.relationship('ANPREvent', backref='camera', lazy='dynamic', cascade='all, delete-orphan')
 
@@ -34,7 +34,7 @@ class ANPREvent(db.Model):
     __tablename__ = 'anpr_events'
     
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, default=datetime.now, nullable=False, index=True)
     camera_id = db.Column(db.Integer, db.ForeignKey('camera_configs.id'), nullable=True)
     captured_plate = db.Column(db.String(32), nullable=False, index=True)
     confidence = db.Column(db.Float, nullable=False, default=95.0)

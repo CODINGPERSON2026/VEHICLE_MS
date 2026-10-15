@@ -12,7 +12,7 @@ from services.audit_service import log_audit
 
 class MovementService:
     @staticmethod
-    def process_rfid_scan(device_id: str, api_key: str, uid: str, direction: str = None, event_id: str = None, is_demo: bool = False):
+    def process_rfid_scan(device_id: str, api_key: str, uid: str, direction: str = None, event_id: str = None, is_demo: bool = False, alcohol_detected: bool = False, alcohol_value: float = None):
         """
         Core gate movement processing engine for incoming RFID scans.
         Server is the ultimate authority on gate access decisions.
@@ -31,6 +31,17 @@ class MovementService:
             )
             db.session.add(DeniedAttempt_record)
             db.session.commit()
+            # Buffer unregistered UID for Live Enrollment Mode
+            norm_uid = normalize_uid(uid)
+            if norm_uid:
+                try:
+                    from services.rfid_service import RFIDService
+                    card = RFIDCard.query.filter_by(uid=norm_uid).first()
+                    if not card:
+                        RFIDService.capture_enrollment_scan(norm_uid, device_id)
+                except Exception:
+                    pass
+
             return {
                 "success": False,
                 "decision": "ENTRY_DENIED",
@@ -80,6 +91,43 @@ class MovementService:
             }, 400
 
         card = RFIDCard.query.filter_by(uid=norm_uid).first()
+
+        # 3.5. Sobriety & Alcohol Detection Check (MQ-3 Sensor)
+        # Alcohol check is strictly enforced for OUTBOUND dispatch (EXIT). Inbound return (ENTRY) does not test alcohol.
+        resolved_direction = MovementService._resolve_direction(device, direction)
+        if alcohol_detected and resolved_direction == GateDirection.EXIT:
+            veh_id = card.vehicle_id if (card and card.vehicle_id) else None
+            veh_num = card.vehicle.registration_number if (card and card.vehicle) else None
+            drv_name = None
+            if card:
+                if card.driver:
+                    drv_name = card.driver.name
+                elif card.vehicle and card.vehicle.driver_name:
+                    drv_name = card.vehicle.driver_name
+            drv_name = drv_name or "Unknown Driver"
+            reading_text = f"Sensor Value: {alcohol_value}" if alcohol_value is not None else "Threshold Exceeded"
+
+            MovementService._log_denied(
+                uid=norm_uid,
+                vehicle_id=veh_id,
+                vehicle_number=veh_num,
+                device_id=device.id,
+                direction=direction or device.direction,
+                reason=DeniedReason.ALCOHOL_DETECTED,
+                event_id=event_id,
+                remarks=f"CRITICAL: Alcohol detected by MQ-3 sensor ({reading_text}). Driver: {drv_name}. Gate barrier locked.",
+                is_demo=is_demo
+            )
+            return {
+                "success": False,
+                "decision": "ENTRY_DENIED",
+                "reason": DeniedReason.ALCOHOL_DETECTED,
+                "message": f"ALCOHOL DETECTED! Driver ({drv_name}) is intoxicated ({reading_text}). Gate access strictly denied.",
+                "alcohol_detected": True,
+                "alcohol_value": alcohol_value,
+                "vehicle_number": veh_num or "N/A",
+                "driver_name": drv_name
+            }, 403
         if not card:
             # Buffer unregistered UID so Live Enrollment Mode catches it immediately
             try:
@@ -132,8 +180,24 @@ class MovementService:
                 "message": f"RFID Card is {card.card_status}."
             }, 403
 
-        # 5. Check Assigned Vehicle
+        # 5. Check Assigned Vehicle or Driver
         vehicle = card.vehicle
+        if not vehicle and card.driver:
+            active_out = VehicleMovement.query.filter_by(
+                driver_id=card.driver.id,
+                status=MovementStatus.OUTSIDE
+            ).order_by(VehicleMovement.exit_time.desc()).first()
+            if active_out and active_out.vehicle:
+                vehicle = active_out.vehicle
+            else:
+                vehicle = Vehicle.query.filter(
+                    Vehicle.is_active == True,
+                    (Vehicle.armynumber == card.driver.armynumber if card.driver.armynumber else False) |
+                    (Vehicle.driver_name == card.driver.name)
+                ).first()
+                if not vehicle:
+                    vehicle = Vehicle.query.filter_by(is_active=True).first()
+
         if not vehicle or not vehicle.is_active:
             MovementService._log_denied(
                 uid=norm_uid,
@@ -141,14 +205,14 @@ class MovementService:
                 direction=direction or device.direction,
                 reason=DeniedReason.UNAUTHORIZED_VEHICLE,
                 event_id=event_id,
-                remarks="Card not assigned to any active vehicle",
+                remarks="Card not assigned to any active vehicle or driver",
                 is_demo=is_demo
             )
             return {
                 "success": False,
                 "decision": "ENTRY_DENIED",
                 "reason": "UNAUTHORIZED_VEHICLE",
-                "message": "RFID card is not assigned to an active vehicle."
+                "message": "RFID card is not assigned to an active vehicle or driver."
             }, 403
 
         # 6. Check Vehicle Authorization
@@ -188,10 +252,12 @@ class MovementService:
             active_outside = vehicle.get_active_outside_movement()
             if active_outside:
                 # Vehicle returned from its active trip
-                active_outside.entry_time = datetime.utcnow()
+                active_outside.entry_time = datetime.now()
                 active_outside.entry_device_id = device.id
                 active_outside.entry_event_id = event_id
                 active_outside.status = MovementStatus.INSIDE
+                active_outside.direction = GateDirection.ENTRY
+                vehicle.current_vehicle_location = 'INSIDE'
                 if active_outside.exit_time:
                     active_outside.duration_seconds = max(0, int((active_outside.entry_time - active_outside.exit_time).total_seconds()))
                 device.last_event = f"ENTRY (RETURN): {vehicle.registration_number}"
@@ -228,7 +294,7 @@ class MovementService:
                     vehicle_id=vehicle.id,
                     rfid_card_id=card.id,
                     driver_name=vehicle.driver_name,
-                    entry_time=datetime.utcnow(),
+                    entry_time=datetime.now(),
                     entry_device_id=device.id,
                     direction=GateDirection.ENTRY,
                     status=MovementStatus.INSIDE,
@@ -236,6 +302,7 @@ class MovementService:
                     is_demo=is_demo
                 )
                 db.session.add(new_movement)
+                vehicle.current_vehicle_location = 'INSIDE'
                 device.last_event = f"ENTRY: {vehicle.registration_number}"
                 db.session.commit()
                 target_movement = new_movement
@@ -258,7 +325,7 @@ class MovementService:
                 "duration": target_movement.formatted_duration,
                 "movement_id": target_movement.id,
                 "event_id": event_id or "",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now().isoformat()
             }
             MovementService._log_device_event(device.id, "SCAN", event_id, resp_data)
             return resp_data, 200
@@ -268,10 +335,12 @@ class MovementService:
             # Check if vehicle is already OUTSIDE on an active trip -> Record Inbound Return
             active_outside = vehicle.get_active_outside_movement()
             if active_outside:
-                active_outside.entry_time = datetime.utcnow()
+                active_outside.entry_time = datetime.now()
                 active_outside.entry_device_id = device.id
                 active_outside.entry_event_id = event_id
                 active_outside.status = MovementStatus.INSIDE
+                active_outside.direction = GateDirection.ENTRY
+                vehicle.current_vehicle_location = 'INSIDE'
                 if active_outside.exit_time:
                     active_outside.duration_seconds = max(0, int((active_outside.entry_time - active_outside.exit_time).total_seconds()))
                 device.last_event = f"ENTRY (RETURN): {vehicle.registration_number}"
@@ -295,7 +364,7 @@ class MovementService:
                     "duration": active_outside.formatted_duration,
                     "movement_id": active_outside.id,
                     "event_id": event_id or "",
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.now().isoformat()
                 }
                 MovementService._log_device_event(device.id, "SCAN", event_id, resp_data)
                 return resp_data, 200
@@ -305,7 +374,7 @@ class MovementService:
                 vehicle_id=vehicle.id,
                 rfid_card_id=card.id,
                 driver_name=vehicle.driver_name,
-                exit_time=datetime.utcnow(),
+                exit_time=datetime.now(),
                 entry_time=None,
                 exit_device_id=device.id,
                 direction=GateDirection.EXIT,
@@ -314,6 +383,7 @@ class MovementService:
                 is_demo=is_demo
             )
             db.session.add(new_movement)
+            vehicle.current_vehicle_location = 'OUT'
             device.last_event = f"EXIT: {vehicle.registration_number}"
             db.session.commit()
 
@@ -335,7 +405,7 @@ class MovementService:
                 "duration": "N/A",
                 "movement_id": new_movement.id,
                 "event_id": event_id or "",
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now().isoformat()
             }
             MovementService._log_device_event(device.id, "SCAN", event_id, resp_data)
             return resp_data, 200
@@ -347,6 +417,251 @@ class MovementService:
                 "reason": "INVALID_DIRECTION",
                 "message": f"Unsupported movement direction: {resolved_direction}"
             }, 400
+
+    @staticmethod
+    def confirm_movement(uid: str, direction: str, driver_id: int = None, driver_name: str = None, operator_user = None, remarks: str = None, device_id: str = None, vehicle_id: int = None):
+        """
+        Operator confirms movement direction (ENTRY or EXIT) for a scanned vehicle.
+        Supports vehicle tags and dedicated driver badges.
+        Explicitly commits the movement and updates inside/outside counts.
+        """
+        norm_uid = normalize_uid(uid)
+        card = RFIDCard.query.filter_by(uid=norm_uid).first()
+        if not card:
+            return False, "Scanned RFID card record not found in system.", None
+
+        # Resolve vehicle (support card.vehicle, explicit vehicle_id, or card.driver)
+        vehicle = None
+        if vehicle_id:
+            vehicle = db.session.get(Vehicle, vehicle_id)
+
+        if not vehicle and card.vehicle:
+            vehicle = card.vehicle
+
+        if not vehicle and card.driver:
+            # Check if this driver currently has an active trip outside
+            active_out = VehicleMovement.query.filter_by(
+                driver_id=card.driver.id,
+                status=MovementStatus.OUTSIDE
+            ).order_by(VehicleMovement.exit_time.desc()).first()
+            if active_out and active_out.vehicle:
+                vehicle = active_out.vehicle
+            else:
+                vehicle = Vehicle.query.filter(
+                    Vehicle.is_active == True,
+                    (Vehicle.armynumber == card.driver.armynumber if card.driver.armynumber else False) |
+                    (Vehicle.custodian_name == card.driver.name)
+                ).first()
+                if not vehicle:
+                    from services.rfid_service import RFIDService
+                    pending = RFIDService.get_pending_scan()
+                    if pending and pending.get('vehicle') and pending.get('vehicle', {}).get('id'):
+                        vehicle = db.session.get(Vehicle, pending['vehicle']['id'])
+                if not vehicle:
+                    if direction and direction.upper() == GateDirection.ENTRY:
+                        outside_mov = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).order_by(VehicleMovement.exit_time.desc()).first()
+                        if outside_mov:
+                            vehicle = outside_mov.vehicle
+                    if not vehicle:
+                        vehicle = Vehicle.query.filter_by(is_active=True).first()
+
+        if not vehicle:
+            return False, "No active vehicle assigned or selected for this scan.", None
+
+        is_auth, auth_err = vehicle.is_currently_authorized()
+        if not is_auth:
+            return False, f"Vehicle authorization status: {vehicle.auth_status} ({auth_err}).", None
+
+        # Resolve driver details
+        final_driver_id = driver_id or (card.driver.id if card.driver else None)
+        final_driver_name = driver_name
+        if final_driver_id:
+            from models.driver import Driver
+            drv = db.session.get(Driver, final_driver_id)
+            if drv:
+                final_driver_name = drv.name
+        if not final_driver_name:
+            if card.driver:
+                final_driver_name = card.driver.name
+            else:
+                final_driver_name = "Unassigned Driver"
+
+        # Resolve device
+        dev = Device.query.filter_by(device_id=device_id).first() if device_id else None
+        dev_id = dev.id if dev else None
+
+        from services.rfid_service import RFIDService
+        RFIDService.clear_pending_scan()
+
+        direction_upper = direction.strip().upper() if direction else GateDirection.ENTRY
+        active_outside = vehicle.get_active_outside_movement()
+        is_outside = active_outside is not None
+
+        if direction_upper == GateDirection.ENTRY:
+            # Cannot enter if vehicle is already inside!
+            if not is_outside:
+                return False, f"Vehicle '{vehicle.registration_number}' is already INSIDE the depot. Cannot record ENTRY (IN).", None
+
+            # Vehicle returned from its active trip
+            active_outside.entry_time = datetime.now()
+            active_outside.status = MovementStatus.INSIDE
+            active_outside.direction = GateDirection.ENTRY
+            active_outside.driver_id = final_driver_id
+            active_outside.driver_name = final_driver_name
+            vehicle.current_vehicle_location = 'INSIDE'
+            if dev_id:
+                active_outside.entry_device_id = dev_id
+            if operator_user:
+                active_outside.entry_operator_id = operator_user.id
+            if remarks:
+                active_outside.remarks = (active_outside.remarks or "") + ("\n" if active_outside.remarks else "") + remarks
+            if active_outside.exit_time:
+                active_outside.duration_seconds = max(0, int((active_outside.entry_time - active_outside.exit_time).total_seconds()))
+            db.session.commit()
+            target_movement = active_outside
+
+            log_audit(
+                action=AuditAction.VEHICLE_ENTRY,
+                description=f"Confirmed ENTRY (Arrival to Depot) for {vehicle.registration_number} ({vehicle.vehicle_type}) by {operator_user.username if operator_user else 'Operator'}",
+                related_vehicle=vehicle.registration_number,
+                user=operator_user
+            )
+
+            total_vehicles = Vehicle.query.filter_by(is_active=True).count()
+            outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
+            inside_count = max(0, total_vehicles - outside_count)
+
+            return True, "Vehicle arrival confirmed. Depot entry authorized.", {
+                "decision": "ENTRY_ALLOWED",
+                "movement_status": MovementStatus.INSIDE,
+                "direction": "ENTRY",
+                "vehicle_number": vehicle.registration_number,
+                "vehicle_type": vehicle.vehicle_type,
+                "driver_name": final_driver_name,
+                "movement_id": target_movement.id,
+                "duration": target_movement.formatted_duration,
+                "inside_count": inside_count,
+                "outside_count": outside_count,
+                "timestamp": datetime.now().strftime('%H:%M:%S')
+            }
+
+        elif direction_upper == GateDirection.EXIT:
+            # Cannot exit if vehicle is already outside!
+            if is_outside:
+                return False, f"Vehicle '{vehicle.registration_number}' is already OUTSIDE on an active trip. Cannot record EXIT (OUT).", None
+
+            # Outbound Exit / Dispatch
+            new_movement = VehicleMovement(
+                vehicle_id=vehicle.id,
+                rfid_card_id=card.id,
+                driver_id=final_driver_id,
+                driver_name=final_driver_name,
+                exit_time=datetime.now(),
+                entry_time=None,
+                exit_device_id=dev_id,
+                exit_operator_id=operator_user.id if operator_user else None,
+                direction=GateDirection.EXIT,
+                status=MovementStatus.OUTSIDE,
+                remarks=remarks
+            )
+            db.session.add(new_movement)
+            vehicle.current_vehicle_location = 'OUT'
+            db.session.commit()
+
+            log_audit(
+                action=AuditAction.VEHICLE_EXIT,
+                description=f"Confirmed EXIT (Outbound Dispatch) for {vehicle.registration_number} ({vehicle.vehicle_type}) by {operator_user.username if operator_user else 'Operator'}",
+                related_vehicle=vehicle.registration_number,
+                user=operator_user
+            )
+
+            total_vehicles = Vehicle.query.filter_by(is_active=True).count()
+            outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
+            inside_count = max(0, total_vehicles - outside_count)
+
+            return True, "Vehicle exit confirmed. Outbound dispatch recorded.", {
+                "decision": "EXIT_RECORDED",
+                "movement_status": MovementStatus.OUTSIDE,
+                "direction": "EXIT",
+                "vehicle_number": vehicle.registration_number,
+                "vehicle_type": vehicle.vehicle_type,
+                "driver_name": final_driver_name,
+                "movement_id": new_movement.id,
+                "duration": "N/A",
+                "inside_count": inside_count,
+                "outside_count": outside_count,
+                "timestamp": datetime.now().strftime('%H:%M:%S')
+            }
+        else:
+            return False, f"Invalid direction: '{direction}'. Expected 'ENTRY' or 'EXIT'.", None
+
+    @staticmethod
+    def report_alcohol_violation(uid: str, direction: str = 'ENTRY', driver_id: int = None, driver_name: str = None, operator_user = None, remarks: str = None, device_id: str = None, vehicle_id: int = None, clear_pending: bool = True):
+        """
+        Manually flag and record a liquor/alcohol violation for a scanned vehicle & driver.
+        Immediately denies gate entry/exit, clears pending scan buffer, and logs DeniedAttempt.
+        """
+        import uuid
+        from services.rfid_service import RFIDService
+        norm_uid = normalize_uid(uid)
+        card = RFIDCard.query.filter_by(uid=norm_uid).first() if norm_uid else None
+
+        vehicle = None
+        if vehicle_id:
+            vehicle = db.session.get(Vehicle, vehicle_id)
+        if not vehicle and card and card.vehicle:
+            vehicle = card.vehicle
+
+        veh_plate = vehicle.registration_number if vehicle else (card.vehicle.registration_number if (card and card.vehicle) else 'Unknown')
+        veh_id = vehicle.id if vehicle else (card.vehicle_id if card else None)
+
+        final_driver_name = driver_name or (card.driver.name if (card and card.driver) else (vehicle.driver_name if vehicle else 'Unknown Driver'))
+
+        device = Device.query.filter_by(device_id=device_id).first() if device_id else None
+        dev_id = device.id if device else None
+
+        detailed_remarks = remarks or f"Guard flagged driver '{final_driver_name}' for Liquor/Alcohol intoxication. {direction} blocked."
+
+        # Clear pending scan so it no longer waits for confirmation (if requested)
+        if clear_pending:
+            RFIDService.clear_pending_scan()
+
+        # Log to DeniedAttempt table
+        attempt = DeniedAttempt(
+            timestamp=datetime.now(),
+            rfid_uid=norm_uid,
+            vehicle_id=veh_id,
+            vehicle_number=veh_plate,
+            device_id=dev_id,
+            direction=direction or 'ENTRY',
+            reason=DeniedReason.ALCOHOL_DETECTED,
+            event_id=str(uuid.uuid4()),
+            operator_id=operator_user.id if operator_user else None,
+            remarks=detailed_remarks,
+            is_demo=False
+        )
+        db.session.add(attempt)
+        db.session.commit()
+
+        # Security Audit Log
+        log_audit(
+            action=AuditAction.DENIED_ATTEMPT,
+            user=operator_user,
+            description=f"LIQUOR DETECTED: {direction} denied for '{veh_plate}' / Driver: '{final_driver_name}'. {detailed_remarks}",
+            related_vehicle=veh_plate,
+            related_device=str(dev_id) if dev_id else None
+        )
+
+        return True, f"Liquor violation recorded for {veh_plate}. Movement blocked.", {
+            "decision": "ENTRY_DENIED" if (direction == 'ENTRY') else "EXIT_DENIED",
+            "direction": direction,
+            "vehicle_number": veh_plate,
+            "vehicle_type": vehicle.vehicle_type if vehicle else "Unknown",
+            "driver_name": final_driver_name,
+            "status": "ALCOHOL_DETECTED",
+            "remarks": detailed_remarks,
+            "timestamp": datetime.now().strftime('%H:%M:%S')
+        }
 
     @staticmethod
     def process_manual_movement(vehicle_id: int, direction: str, reason: str, operator_user, remarks: str = None, is_demo: bool = False):
@@ -370,11 +685,13 @@ class MovementService:
             # Check if vehicle has an active OUTSIDE trip to close
             active_outside = vehicle.get_active_outside_movement()
             if active_outside:
-                active_outside.entry_time = datetime.utcnow()
+                active_outside.entry_time = datetime.now()
                 active_outside.entry_operator_id = operator_user.id if operator_user else None
                 active_outside.status = MovementStatus.INSIDE
+                active_outside.direction = GateDirection.ENTRY
                 active_outside.is_manual = True
                 active_outside.manual_reason = reason.strip()
+                vehicle.current_vehicle_location = 'INSIDE'
                 if remarks:
                     active_outside.remarks = (active_outside.remarks or "") + ("\n" if active_outside.remarks else "") + remarks
                 if active_outside.exit_time:
@@ -392,7 +709,7 @@ class MovementService:
             # Direct manual entry record
             movement = VehicleMovement(
                 vehicle_id=vehicle.id,
-                entry_time=datetime.utcnow(),
+                entry_time=datetime.now(),
                 entry_operator_id=operator_user.id if operator_user else None,
                 direction=GateDirection.ENTRY,
                 status=MovementStatus.INSIDE,
@@ -402,6 +719,7 @@ class MovementService:
                 is_demo=is_demo
             )
             db.session.add(movement)
+            vehicle.current_vehicle_location = 'INSIDE'
             db.session.commit()
 
             log_audit(
@@ -418,7 +736,7 @@ class MovementService:
 
             movement = VehicleMovement(
                 vehicle_id=vehicle.id,
-                exit_time=datetime.utcnow(),
+                exit_time=datetime.now(),
                 entry_time=None,
                 exit_operator_id=operator_user.id if operator_user else None,
                 direction=GateDirection.EXIT,
@@ -429,6 +747,7 @@ class MovementService:
                 is_demo=is_demo
             )
             db.session.add(movement)
+            vehicle.current_vehicle_location = 'OUT'
             db.session.commit()
 
             log_audit(
@@ -466,7 +785,7 @@ class MovementService:
     def _log_denied(uid=None, vehicle_id=None, vehicle_number=None, device_id=None, direction='ENTRY', reason=None, event_id=None, remarks=None, is_demo=False):
         """Helper to record denied attempts and trigger audit trail."""
         attempt = DeniedAttempt(
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(),
             rfid_uid=uid,
             vehicle_id=vehicle_id,
             vehicle_number=vehicle_number,
@@ -496,7 +815,7 @@ class MovementService:
             event_id=event_id,
             raw_payload=json.dumps(payload),
             response_summary=f"{payload.get('decision', 'PROCESSED')} - {payload.get('message', '')}",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now()
         )
         db.session.add(evt)
         db.session.commit()

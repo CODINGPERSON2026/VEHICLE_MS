@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}Vehicles Inside Depot - {{ system_name }}{% endblock %}
-{% block page_title %}Fleet Vehicles Currently Stationed Inside Depot{% endblock %}
+{% block title %}Vehicles Inside MT Garage - {{ system_name }}{% endblock %}
+{% block page_title %}Fleet Vehicles Currently Stationed Inside MT Garage{% endblock %}
 
 {% block content %}
 <div class="card border-0 shadow-sm rounded-3 mb-4">
@@ -17,7 +17,7 @@
 
       <div class="d-flex align-items-center gap-2">
         <span class="badge bg-success fs-6 px-3 py-2 rounded-pill shadow-sm">
-          <i class="fa-solid fa-warehouse me-1"></i> Available Inside Depot: {{ vehicles|length }}
+          <i class="fa-solid fa-warehouse me-1"></i> Available Inside MT Garage: {{ vehicles|length }}
         </span>
         <a href="{{ url_for('movements.currently_outside') }}" class="btn btn-outline-warning btn-sm text-dark fw-semibold">
           <i class="fa-solid fa-road me-1 text-warning"></i>View Outside (On Trip)
@@ -37,7 +37,7 @@
           <th>Type</th>
           <th>Registered Driver / Contact</th>
           <th>RFID Tag UID</th>
-          <th>Depot Status</th>
+          <th>MT Garage Status</th>
           <th>Authorization</th>
           <th class="text-end">Action</th>
         </tr>
@@ -58,7 +58,7 @@
           <td class="font-monospace small text-primary">{{ v.primary_rfid_uid }}</td>
           <td>
             <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">
-              <i class="fa-solid fa-warehouse me-1"></i>INSIDE DEPOT (Available)
+              <i class="fa-solid fa-warehouse me-1"></i>INSIDE MT GARAGE (Available)
             </span>
           </td>
           <td>
@@ -115,7 +115,7 @@
         <tr>
           <td colspan="7" class="text-center py-5 text-muted">
             <i class="fa-solid fa-warehouse fs-1 d-block mb-2 text-secondary"></i>
-            No vehicles currently stationed inside depot (All active vehicles are outside on trip).
+            No vehicles currently stationed inside MT Garage (All active vehicles are outside on trip).
           </td>
         </tr>
         {% endfor %}

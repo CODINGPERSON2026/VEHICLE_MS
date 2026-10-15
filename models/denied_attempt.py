@@ -14,19 +14,20 @@ class DeniedReason:
     INVALID_DEVICE = 'INVALID_DEVICE'
     INVALID_DIRECTION = 'INVALID_DIRECTION'
     MANUAL_EXCEPTION = 'MANUAL_EXCEPTION'
+    ALCOHOL_DETECTED = 'ALCOHOL_DETECTED'
 
     CHOICES = [
         UNKNOWN_RFID, BLOCKED_CARD, EXPIRED_CARD, INACTIVE_CARD,
         UNAUTHORIZED_VEHICLE, EXPIRED_AUTHORIZATION, BLOCKED_VEHICLE,
         DUPLICATE_ENTRY, NO_ACTIVE_ENTRY, INVALID_DEVICE, INVALID_DIRECTION,
-        MANUAL_EXCEPTION
+        MANUAL_EXCEPTION, ALCOHOL_DETECTED
     ]
 
 class DeniedAttempt(db.Model):
     __tablename__ = 'denied_attempts'
     
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, default=datetime.now, nullable=False, index=True)
     rfid_uid = db.Column(db.String(32), nullable=True, index=True)
     vehicle_number = db.Column(db.String(32), nullable=True, index=True)
     vehicle_id = db.Column(db.Integer, db.ForeignKey('vehicles.id'), nullable=True)

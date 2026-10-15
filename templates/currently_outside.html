@@ -20,7 +20,7 @@
           <i class="fa-solid fa-truck-moving me-1"></i> Total Outside / On Trip: {{ movements|length }}
         </span>
         <a href="{{ url_for('movements.currently_inside') }}" class="btn btn-outline-primary btn-sm">
-          <i class="fa-solid fa-warehouse me-1"></i>View Inside Depot
+          <i class="fa-solid fa-warehouse me-1"></i>View Inside MT Garage
         </a>
       </div>
     </div>
@@ -56,10 +56,10 @@
           <td><span class="badge bg-light text-dark border">{{ m.vehicle.vehicle_type }}</span></td>
           <td>
             <div class="small fw-bold text-primary">
-              <i class="fa-solid fa-user-check me-1 text-success"></i>{{ m.driver_name or (m.vehicle.driver_name if m.vehicle else 'Unassigned') }}
+              <i class="fa-solid fa-user-check me-1 text-success"></i>{{ m.driver_name or (m.driver.name if m.driver else (m.rfid_card.driver.name if m.rfid_card and m.rfid_card.driver else 'Unassigned Driver')) }}
             </div>
-            {% if m.driver_name and m.vehicle and m.vehicle.driver_name and m.driver_name != m.vehicle.driver_name %}
-            <small class="text-muted d-block" style="font-size: 0.7rem;">Owner: {{ m.vehicle.driver_name }}</small>
+            {% if m.vehicle and m.vehicle.custodian_name %}
+            <small class="text-muted d-block" style="font-size: 0.7rem;">Custodian: {{ m.vehicle.custodian_name }}</small>
             {% endif %}
             <div class="text-muted" style="font-size: 0.75rem;">{{ m.vehicle.mobile_number or '-' }}</div>
           </td>
@@ -75,7 +75,7 @@
           <td class="text-end">
             {% if current_user.role != Role.REPORT_VIEWER %}
             <!-- Quick Inbound Check-In Return Form -->
-            <form method="POST" action="{{ url_for('movements.quick_return_vehicle', vehicle_id=m.vehicle.id) }}" class="d-inline" onsubmit="return confirm('Confirm vehicle arrival & check-in back into depot: {{ m.vehicle.registration_number }}?');">
+            <form method="POST" action="{{ url_for('movements.quick_return_vehicle', vehicle_id=m.vehicle.id) }}" class="d-inline" onsubmit="return confirm('Confirm vehicle arrival & check-in back into MT Garage: {{ m.vehicle.registration_number }}?');">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
               <button type="submit" class="btn btn-sm btn-success fw-semibold shadow-sm">
                 <i class="fa-solid fa-house-chimney-crack me-1"></i>Mark Returned (IN)
@@ -88,7 +88,7 @@
         <tr>
           <td colspan="9" class="text-center py-5 text-muted">
             <i class="fa-solid fa-circle-check fs-1 d-block mb-2 text-success"></i>
-            All fleet vehicles are currently stationed inside the depot. No vehicles are out on trip.
+            All fleet vehicles are currently stationed inside the MT Garage. No vehicles are out on trip.
           </td>
         </tr>
         {% endfor %}

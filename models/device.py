@@ -44,7 +44,7 @@ class Device(db.Model):
     
     api_key_hash = db.Column(db.String(256), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
     
     # Event logs
     events = db.relationship('DeviceEvent', backref='device', lazy='dynamic', cascade='all, delete-orphan')
@@ -70,11 +70,11 @@ class Device(db.Model):
             return False
         if not self.last_seen:
             return False
-        return (datetime.utcnow() - self.last_seen) < timedelta(seconds=timeout_seconds)
+        return (datetime.now() - self.last_seen) < timedelta(seconds=timeout_seconds)
 
     def update_heartbeat(self, ip_address=None, firmware_version=None):
         """Update last seen timestamp, IP, and status."""
-        self.last_seen = datetime.utcnow()
+        self.last_seen = datetime.now()
         if self.status != DeviceStatus.DISABLED:
             self.status = DeviceStatus.ONLINE
         if ip_address:
@@ -94,7 +94,7 @@ class DeviceEvent(db.Model):
     event_id = db.Column(db.String(64), nullable=True, index=True) # Idempotency token
     raw_payload = db.Column(db.Text, nullable=True)
     response_summary = db.Column(db.String(255), nullable=True)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, default=datetime.now, nullable=False, index=True)
 
     def __repr__(self):
         return f"<DeviceEvent {self.event_type} on Device #{self.device_id}>"

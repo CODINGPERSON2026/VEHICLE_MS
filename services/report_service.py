@@ -44,6 +44,17 @@ class ReportType:
 
 class ReportService:
     @staticmethod
+    def _resolve_driver(m):
+        """Get actual driver name for movement, never falling back to vehicle custodian."""
+        if m.driver_name and m.driver_name.strip():
+            return m.driver_name.strip()
+        if m.driver and m.driver.name and m.driver.name.strip():
+            return m.driver.name.strip()
+        if m.rfid_card and m.rfid_card.driver and m.rfid_card.driver.name and m.rfid_card.driver.name.strip():
+            return m.rfid_card.driver.name.strip()
+        return "N/A"
+
+    @staticmethod
     def get_report_data(report_type: str, start_date=None, end_date=None, vehicle_number=None, status=None, is_demo=None):
         """
         Generate datasets (headers and rows) for each of the 11 report types.
@@ -73,7 +84,7 @@ class ReportService:
                 query = query.filter_by(is_demo=is_demo)
             movements = query.order_by(VehicleMovement.entry_time.desc()).all()
 
-            headers = ['Sr No', 'Date', 'Vehicle No', 'Type', 'Driver', 'RFID UID', 'Entry Time', 'Exit Time', 'Duration', 'Gate/Device', 'Status']
+            headers = ['Sr No', 'Date', 'Vehicle No', 'Type', 'Driver', 'Entry Time', 'Exit Time', 'Duration', 'Status']
             rows = []
             for idx, m in enumerate(movements, 1):
                 rows.append([
@@ -81,12 +92,10 @@ class ReportService:
                     m.entry_time.strftime('%Y-%m-%d'),
                     m.vehicle.registration_number if m.vehicle else 'N/A',
                     m.vehicle.vehicle_type if m.vehicle else 'N/A',
-                    m.vehicle.driver_name if m.vehicle and m.vehicle.driver_name else 'N/A',
-                    m.rfid_card.uid if m.rfid_card else 'N/A',
+                    ReportService._resolve_driver(m),
                     m.entry_time.strftime('%H:%M:%S'),
                     m.exit_time.strftime('%H:%M:%S') if m.exit_time else '-',
                     m.formatted_duration,
-                    m.entry_device.device_name if m.entry_device else 'System',
                     m.status
                 ])
             return headers, rows
@@ -103,7 +112,7 @@ class ReportService:
                 query = query.filter_by(status=status)
             movements = query.order_by(VehicleMovement.entry_time.desc()).all()
 
-            headers = ['Sr No', 'Date', 'Vehicle No', 'Type', 'Driver', 'RFID UID', 'Entry Time', 'Exit Time', 'Duration', 'Direction', 'Status']
+            headers = ['Sr No', 'Date', 'Vehicle No', 'Type', 'Driver', 'Entry Time', 'Exit Time', 'Duration', 'Direction', 'Status']
             rows = []
             for idx, m in enumerate(movements, 1):
                 rows.append([
@@ -111,8 +120,7 @@ class ReportService:
                     m.entry_time.strftime('%Y-%m-%d'),
                     m.vehicle.registration_number if m.vehicle else 'N/A',
                     m.vehicle.vehicle_type if m.vehicle else 'N/A',
-                    m.vehicle.driver_name if m.vehicle and m.vehicle.driver_name else 'N/A',
-                    m.rfid_card.uid if m.rfid_card else 'N/A',
+                    ReportService._resolve_driver(m),
                     m.entry_time.strftime('%H:%M:%S'),
                     m.exit_time.strftime('%H:%M:%S') if m.exit_time else '-',
                     m.formatted_duration,
@@ -131,19 +139,17 @@ class ReportService:
                 query = query.filter(VehicleMovement.is_demo == is_demo)
             movements = query.order_by(VehicleMovement.entry_time.desc()).limit(200).all()
 
-            headers = ['Sr No', 'Vehicle No', 'Type', 'Driver', 'Entry Time', 'Exit Time', 'Duration', 'Entry Device', 'Exit Device', 'Status']
+            headers = ['Sr No', 'Vehicle No', 'Type', 'Driver', 'Entry Time', 'Exit Time', 'Duration', 'Status']
             rows = []
             for idx, m in enumerate(movements, 1):
                 rows.append([
                     idx,
                     m.vehicle.registration_number if m.vehicle else 'N/A',
                     m.vehicle.vehicle_type if m.vehicle else 'N/A',
-                    m.vehicle.driver_name if m.vehicle and m.vehicle.driver_name else 'N/A',
+                    ReportService._resolve_driver(m),
                     m.entry_time.strftime('%Y-%m-%d %H:%M:%S'),
                     m.exit_time.strftime('%Y-%m-%d %H:%M:%S') if m.exit_time else 'Still Inside',
                     m.formatted_duration,
-                    m.entry_device.device_name if m.entry_device else 'System',
-                    m.exit_device.device_name if m.exit_device else '-',
                     m.status
                 ])
             return headers, rows
@@ -155,19 +161,18 @@ class ReportService:
                 query = query.filter_by(is_demo=is_demo)
             movements = query.order_by(VehicleMovement.entry_time.asc()).all()
 
-            headers = ['Sr No', 'Vehicle No', 'Type', 'Driver', 'Mobile', 'RFID UID', 'Entry Date & Time', 'Time Spent', 'Entry Gate']
+            headers = ['Sr No', 'Vehicle No', 'Type', 'Driver', 'Mobile', 'Entry Date & Time', 'Time Spent']
             rows = []
             for idx, m in enumerate(movements, 1):
+                driver_mobile = m.driver.mobile_number if m.driver and m.driver.mobile_number else (m.vehicle.mobile_number if m.vehicle and m.vehicle.mobile_number else 'N/A')
                 rows.append([
                     idx,
                     m.vehicle.registration_number if m.vehicle else 'N/A',
                     m.vehicle.vehicle_type if m.vehicle else 'N/A',
-                    m.vehicle.driver_name if m.vehicle and m.vehicle.driver_name else 'N/A',
-                    m.vehicle.mobile_number if m.vehicle and m.vehicle.mobile_number else 'N/A',
-                    m.rfid_card.uid if m.rfid_card else 'N/A',
+                    ReportService._resolve_driver(m),
+                    driver_mobile,
                     m.entry_time.strftime('%Y-%m-%d %H:%M:%S'),
-                    m.formatted_duration,
-                    m.entry_device.device_name if m.entry_device else 'Main Gate'
+                    m.formatted_duration
                 ])
             return headers, rows
 
@@ -182,15 +187,13 @@ class ReportService:
                 query = query.filter(DeniedAttempt.timestamp <= datetime.combine(end_date, datetime.max.time()))
             attempts = query.order_by(DeniedAttempt.timestamp.desc()).all()
 
-            headers = ['Sr No', 'Timestamp', 'RFID UID', 'Vehicle No', 'Gate/Device', 'Direction', 'Reason', 'Remarks']
+            headers = ['Sr No', 'Timestamp', 'Vehicle No', 'Direction', 'Reason', 'Remarks']
             rows = []
             for idx, a in enumerate(attempts, 1):
                 rows.append([
                     idx,
                     a.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
-                    a.rfid_uid or 'Unknown',
                     a.vehicle_number or 'N/A',
-                    a.device.device_name if a.device else 'System',
                     a.direction,
                     a.reason,
                     a.remarks or ''
@@ -289,7 +292,7 @@ class ReportService:
                 query = query.filter_by(is_demo=is_demo)
             events = query.order_by(ANPREvent.timestamp.desc()).all()
 
-            headers = ['Sr No', 'Timestamp', 'Captured Plate', 'Confidence', 'Matched Vehicle', 'RFID Ref', 'Verification Status']
+            headers = ['Sr No', 'Timestamp', 'Captured Plate', 'Confidence', 'Matched Vehicle', 'Verification Status']
             rows = []
             for idx, e in enumerate(events, 1):
                 rows.append([
@@ -298,7 +301,6 @@ class ReportService:
                     e.captured_plate,
                     f"{e.confidence:.1f}%",
                     e.matched_vehicle.registration_number if e.matched_vehicle else 'No Match',
-                    e.rfid_event_id or '-',
                     e.verification_status
                 ])
             return headers, rows
@@ -342,7 +344,7 @@ class ReportService:
         writer = csv.writer(output)
         title = ReportType.TITLES.get(report_type, 'Vehicle Gate Report')
         writer.writerow([title])
-        writer.writerow([f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}"])
+        writer.writerow([f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
         writer.writerow([])
         writer.writerow(headers)
         for r in rows:
@@ -376,7 +378,7 @@ class ReportService:
         ws['A1'].font = title_font
         
         ws.merge_cells('A2:G2')
-        ws['A2'] = f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')} | Smart RFID Gate Management System"
+        ws['A2'] = f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Smart RFID Gate Management System"
         ws['A2'].font = meta_font
         
         # Headers (Row 4)
@@ -441,7 +443,7 @@ class ReportService:
         elements = []
         title = ReportType.TITLES.get(report_type, 'Vehicle Gate Report')
         elements.append(Paragraph(title, title_style))
-        elements.append(Paragraph(f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')} | Smart RFID + ANPR Gate System", meta_style))
+        elements.append(Paragraph(f"Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Smart RFID + ANPR Gate System", meta_style))
         elements.append(Spacer(1, 15))
         
         # Table data
@@ -469,6 +471,23 @@ class ReportService:
             ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
         ]))
         elements.append(pdf_table)
+
+        # Official Military Audit & Signatures
+        elements.append(Spacer(1, 30))
+        sig_data = [
+            ["_____________________________", "_____________________________", "_____________________________"],
+            ["SIG OF MT NCO", "SIG OF MT JCO", "SIG OF MTO"]
+        ]
+        sig_table = Table(sig_data, colWidths=[240, 240, 240])
+        sig_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 1), (-1, 1), 9),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#0F172A')),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 2),
+            ('TOPPADDING', (0, 1), (-1, 1), 2),
+        ]))
+        elements.append(sig_table)
         
         doc.build(elements)
         buffer.seek(0)

@@ -28,7 +28,7 @@ class VehicleMovement(db.Model):
     driver_name = db.Column(db.String(120), nullable=True) # Actual trip driver name
 
     # Entry details
-    entry_time = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    entry_time = db.Column(db.DateTime, default=datetime.now, nullable=False, index=True)
     entry_device_id = db.Column(db.Integer, db.ForeignKey('devices.id'), nullable=True)
     entry_operator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     
@@ -52,7 +52,7 @@ class VehicleMovement(db.Model):
     entry_event_id = db.Column(db.String(64), nullable=True, index=True)
     exit_event_id = db.Column(db.String(64), nullable=True, index=True)
     
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.now, nullable=False)
     
     # Relationships to devices, operators and driver
     entry_device = db.relationship('Device', foreign_keys=[entry_device_id], backref='entry_movements')
@@ -63,13 +63,17 @@ class VehicleMovement(db.Model):
     
     @property
     def formatted_duration(self):
-        """Format duration nicely: e.g. 2h 15m 30s or calculating live if INSIDE."""
+        """Format duration nicely: e.g. 2h 15m 30s or calculating live for OUTSIDE/INSIDE."""
         if self.duration_seconds is not None:
             secs = self.duration_seconds
+        elif self.status == MovementStatus.OUTSIDE and self.exit_time:
+            secs = int((datetime.now() - self.exit_time).total_seconds())
+        elif self.entry_time and self.exit_time:
+            secs = int((self.entry_time - self.exit_time).total_seconds())
         elif self.status == MovementStatus.INSIDE and self.entry_time:
-            secs = int((datetime.utcnow() - self.entry_time).total_seconds())
+            secs = int((datetime.now() - self.entry_time).total_seconds())
         else:
-            return "N/A"
+            return "-"
             
         if secs < 0:
             secs = 0
@@ -87,7 +91,7 @@ class VehicleMovement(db.Model):
 
     def close_movement(self, exit_time=None, exit_device_id=None, exit_operator_id=None, exit_event_id=None, remarks=None):
         """Finalize exit for an INSIDE vehicle movement record."""
-        self.exit_time = exit_time or datetime.utcnow()
+        self.exit_time = exit_time or datetime.now()
         self.exit_device_id = exit_device_id
         self.exit_operator_id = exit_operator_id
         self.exit_event_id = exit_event_id

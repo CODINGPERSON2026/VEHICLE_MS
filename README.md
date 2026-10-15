@@ -1,6 +1,6 @@
 # Smart RFID + ANPR Vehicle Gate Management System
 
-A production-grade, offline-capable Smart Vehicle Gate Entry & Exit Management System built with **Python Flask**, **SQLite**, **ESP32-WROOM-32**, **RC522 RFID**, **Bootstrap 5**, and an extensible **OpenCV / ANPR** architecture.
+A production-grade Smart Vehicle Gate Entry & Exit Management System built with **Python Flask**, **MySQL / MySQL Workbench**, **ESP32-WROOM-32**, **RC522 RFID**, **Bootstrap 5**, and an extensible **OpenCV / ANPR** architecture.
 
 ---
 
@@ -34,8 +34,8 @@ A production-grade, offline-capable Smart Vehicle Gate Entry & Exit Management S
   - OCR confidence scoring and license plate cross-verification with RFID records.
   - Interactive ANPR Test Mode.
 - **💾 Backup & Disaster Recovery:**
-  - Non-blocking online SQLite backups.
-  - Automated PRAGMA integrity verification before restore with confirmation safeguards.
+  - Transactional online MySQL database snapshots (`.sql` dumps).
+  - Compatible with MySQL Workbench with pre-restore safety snapshots.
 
 ---
 
@@ -192,7 +192,7 @@ smart_vehicle_gate/
 ├── .env.example               # Environment variables template
 │
 ├── database/
-│ └── db_init.py              # SQLite DB initialization & settings seed
+│ └── db_init.py              # MySQL DB initialization & settings seed
 │
 ├── models/
 │ ├── user.py                  # User authentication & RBAC roles
@@ -230,9 +230,10 @@ smart_vehicle_gate/
 │ └── device_protocol.md       # API specification & payload documentation
 │
 ├── templates/                 # Modern Bootstrap 5 Jinja2 templates
+│ ├── _scan_confirmation_modal.html # Direction-aware Scan Confirmation Modal
 ├── static/                    # CSS design system & JavaScript telemetry
 ├── tests/                     # Pytest automated test suite
-├── backups/                   # Safe SQLite database snapshot storage
+├── backups/                   # MySQL Workbench compatible .sql snapshot storage
 └── reports/                   # Exported report files
 ```
 

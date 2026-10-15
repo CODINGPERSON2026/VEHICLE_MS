@@ -1,5 +1,5 @@
 from datetime import datetime, date, timedelta
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_login import login_required, current_user
 from database.db_init import db
 from models.movement import VehicleMovement, MovementStatus, GateDirection
@@ -11,6 +11,7 @@ from models.settings import SystemSetting
 from models.user import Role
 from services.movement_service import MovementService
 from services.vehicle_service import VehicleService
+from services.rfid_service import RFIDService
 
 movements_bp = Blueprint('movements', __name__)
 
@@ -19,13 +20,16 @@ movements_bp = Blueprint('movements', __name__)
 @login_required
 def gate_control():
     """Live Gate Control interface for operators."""
+    # Reset/clear any pending scan buffer on page load or refresh so interface starts clean and reset
+    RFIDService.clear_pending_scan()
+
     devices = Device.query.filter_by(is_active=True).all()
     vehicles = Vehicle.query.filter_by(is_active=True).order_by(Vehicle.registration_number.asc()).all()
     direction_mode = SystemSetting.get_value('gate_direction_mode', 'EXIT_ONLY')
     barrier_delay = int(SystemSetting.get_value('barrier_auto_close_delay', '4'))
     
     # Fetch recent movement or denial within last 10 seconds (active scan window)
-    threshold = datetime.utcnow() - timedelta(seconds=10)
+    threshold = datetime.now() - timedelta(seconds=10)
     latest_movement = VehicleMovement.query.filter(
         (VehicleMovement.exit_time >= threshold) | (VehicleMovement.entry_time >= threshold)
     ).order_by(db.func.coalesce(VehicleMovement.exit_time, VehicleMovement.entry_time).desc()).first()
@@ -34,9 +38,8 @@ def gate_control():
     from models.driver import Driver
     drivers = Driver.query.filter_by(is_active=True).order_by(Driver.name.asc()).all()
     
-    total_vehicles = Vehicle.query.filter_by(is_active=True).count()
-    outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
-    inside_count = max(0, total_vehicles - outside_count)
+    outside_count = Vehicle.query.filter_by(is_active=True, current_vehicle_location='OUT').count()
+    inside_count = Vehicle.query.filter_by(is_active=True, current_vehicle_location='INSIDE').count()
 
     return render_template(
         'gate_control.html',
@@ -133,12 +136,9 @@ def currently_inside():
     """Vehicles currently stationed INSIDE depot/premises (Available)."""
     search = request.args.get('search', '').strip()
     
-    # Exclude vehicles currently outside on active trip
-    outside_vehicle_ids = [m.vehicle_id for m in VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).all()]
-    
     query = Vehicle.query.filter(
         Vehicle.is_active == True,
-        Vehicle.id.notin_(outside_vehicle_ids) if outside_vehicle_ids else True
+        Vehicle.current_vehicle_location == 'INSIDE'
     )
     
     if search:
@@ -182,16 +182,23 @@ def quick_return_vehicle(vehicle_id):
         flash('Permission denied.', 'danger')
         return redirect(request.referrer or url_for('movements.gate_control'))
 
-    remarks = request.form.get('remarks', 'Vehicle Returned to Depot (Arrival Check-In)').strip()
+    remarks = request.form.get('remarks', 'Vehicle Returned to MT Garage (Arrival Check-In)').strip()
     success, msg, _ = MovementService.process_manual_movement(
         vehicle_id=vehicle_id,
         direction=GateDirection.ENTRY,
-        reason="Vehicle returned to depot (Arrival Check-In)",
+        reason="Vehicle returned to MT Garage (Arrival Check-In)",
         operator_user=current_user,
         remarks=remarks
     )
     if success:
-        flash('Vehicle marked RETURNED (IN Depot) successfully.', 'success')
+        veh = db.session.get(Vehicle, vehicle_id)
+        if veh:
+            session['voice_announce'] = {
+                'plate': veh.registration_number,
+                'driver': veh.driver_name or 'Driver',
+                'dir': 'IN'
+            }
+        flash('Vehicle marked RETURNED (IN MT Garage) successfully.', 'success')
     else:
         flash(msg, 'danger')
 
@@ -256,6 +263,13 @@ def manual_movement():
     )
 
     if success:
+        veh = db.session.get(Vehicle, vehicle_id)
+        if veh:
+            session['voice_announce'] = {
+                'plate': veh.registration_number,
+                'driver': (mov.driver_name if mov else None) or veh.driver_name or 'Driver',
+                'dir': 'OUT' if direction in ['EXIT', GateDirection.EXIT] else 'IN'
+            }
         flash(msg, 'success')
     else:
         flash(msg, 'danger')
@@ -266,15 +280,15 @@ def manual_movement():
 @login_required
 def live_gate_feed():
     """Live JSON endpoint for Gate Control view polling."""
-    threshold = datetime.utcnow() - timedelta(seconds=10)
+    threshold = datetime.now() - timedelta(seconds=10)
     latest_movement = VehicleMovement.query.filter(
-        (VehicleMovement.exit_time >= threshold) | (VehicleMovement.entry_time >= threshold)
-    ).order_by(db.func.coalesce(VehicleMovement.exit_time, VehicleMovement.entry_time).desc()).first()
+        (VehicleMovement.entry_time >= threshold) | (VehicleMovement.exit_time >= threshold)
+    ).order_by(db.func.coalesce(VehicleMovement.entry_time, VehicleMovement.exit_time).desc()).first()
     latest_denied = DeniedAttempt.query.filter(DeniedAttempt.timestamp >= threshold).order_by(DeniedAttempt.timestamp.desc()).first()
     
     last_event = None
     if latest_movement and latest_denied:
-        m_time = latest_movement.exit_time if latest_movement.status == MovementStatus.OUTSIDE and latest_movement.exit_time else latest_movement.entry_time
+        m_time = latest_movement.entry_time if (latest_movement.status == MovementStatus.INSIDE and latest_movement.entry_time) else (latest_movement.exit_time or latest_movement.entry_time)
         if m_time >= latest_denied.timestamp:
             event_type = 'MOVEMENT'
         else:
@@ -287,18 +301,19 @@ def live_gate_feed():
         event_type = None
 
     if event_type == 'MOVEMENT' and latest_movement:
-        evt_time = latest_movement.exit_time if latest_movement.status == MovementStatus.OUTSIDE and latest_movement.exit_time else latest_movement.entry_time
+        evt_time = latest_movement.entry_time if (latest_movement.status == MovementStatus.INSIDE and latest_movement.entry_time) else (latest_movement.exit_time or latest_movement.entry_time)
+        is_outside_status = (latest_movement.status == MovementStatus.OUTSIDE)
         last_event = {
             "type": "MOVEMENT",
             "movement_id": latest_movement.id,
-            "decision": "EXIT_RECORDED" if latest_movement.status == MovementStatus.OUTSIDE else "ENTRY_ALLOWED",
+            "decision": "EXIT_RECORDED" if is_outside_status else "ENTRY_ALLOWED",
             "vehicle_number": latest_movement.vehicle.registration_number if latest_movement.vehicle else "N/A",
             "vehicle_type": latest_movement.vehicle.vehicle_type if latest_movement.vehicle else "N/A",
             "driver_name": latest_movement.driver_name or (latest_movement.vehicle.driver_name if latest_movement.vehicle else "N/A"),
             "owner_driver": latest_movement.vehicle.driver_name if latest_movement.vehicle else "N/A",
             "auth_status": latest_movement.vehicle.auth_status if latest_movement.vehicle else "N/A",
             "rfid_uid": latest_movement.rfid_card.uid if latest_movement.rfid_card else "N/A",
-            "direction": latest_movement.direction,
+            "direction": "EXIT" if is_outside_status else "ENTRY",
             "status": latest_movement.status,
             "duration": latest_movement.formatted_duration,
             "time": evt_time.strftime('%H:%M:%S') if evt_time else '',
@@ -319,12 +334,102 @@ def live_gate_feed():
             "remarks": latest_denied.remarks
         }
 
-    total_vehicles = Vehicle.query.filter_by(is_active=True).count()
-    outside_count = VehicleMovement.query.filter_by(status=MovementStatus.OUTSIDE).count()
-    inside_count = max(0, total_vehicles - outside_count)
+    outside_count = Vehicle.query.filter_by(is_active=True, current_vehicle_location='OUT').count()
+    inside_count = Vehicle.query.filter_by(is_active=True, current_vehicle_location='INSIDE').count()
+    pending_scan = RFIDService.get_pending_scan()
+    latest_reading = RFIDService.get_latest_sensor_reading()
+
     return jsonify({
         "last_event": last_event,
+        "pending_scan": pending_scan,
+        "latest_alcohol_reading": latest_reading,
         "inside_count": inside_count,
         "outside_count": outside_count,
-        "server_time": datetime.utcnow().strftime('%H:%M:%S')
+        "server_time": datetime.now().strftime('%H:%M:%S'),
+        "server_date": datetime.now().strftime('%d %b %Y'),
+        "server_time_iso": datetime.now().isoformat()
     })
+
+@movements_bp.route('/api/movements/confirm_scan', methods=['POST'])
+@login_required
+def api_confirm_scan():
+    """
+    Operator confirms IN or OUT for a scanned vehicle.
+    Updates the movement record, inside/outside counts, and audit trail.
+    """
+    data = request.get_json(silent=True) or {}
+    uid = data.get('uid')
+    direction = data.get('direction', 'ENTRY')
+    vehicle_id = data.get('vehicle_id')
+    driver_id = data.get('driver_id')
+    driver_name = data.get('driver_name')
+    remarks = data.get('remarks')
+    device_id = data.get('device_id', 'GATE01')
+
+    if not uid:
+        return jsonify({"success": False, "message": "RFID UID is required."}), 400
+
+    v_id = int(vehicle_id) if vehicle_id and str(vehicle_id).isdigit() else None
+    d_id = int(driver_id) if driver_id and str(driver_id).isdigit() else None
+
+    success, msg, movement_data = MovementService.confirm_movement(
+        uid=uid,
+        direction=direction,
+        driver_id=d_id,
+        driver_name=driver_name,
+        operator_user=current_user,
+        remarks=remarks,
+        device_id=device_id,
+        vehicle_id=v_id
+    )
+
+    if not success:
+        return jsonify({"success": False, "message": msg}), 400
+
+    return jsonify({
+        "success": True,
+        "message": msg,
+        "data": movement_data
+    }), 200
+
+@movements_bp.route('/api/movements/report_alcohol', methods=['POST'])
+@login_required
+def api_report_alcohol():
+    """
+    Operator flags a vehicle & driver scan with positive Liquor/Alcohol detection.
+    Denies movement, logs security audit & DeniedAttempt, and clears the pending scan.
+    """
+    data = request.get_json(silent=True) or {}
+    uid = data.get('uid')
+    direction = data.get('direction', 'ENTRY')
+    vehicle_id = data.get('vehicle_id')
+    driver_id = data.get('driver_id')
+    driver_name = data.get('driver_name')
+    device_id = data.get('device_id', 'GATE01')
+    remarks = data.get('remarks', 'Liquor detected by gate guard sobriety check.')
+
+    if not uid:
+        return jsonify({"success": False, "message": "RFID UID is required."}), 400
+
+    v_id = int(vehicle_id) if vehicle_id and str(vehicle_id).isdigit() else None
+    d_id = int(driver_id) if driver_id and str(driver_id).isdigit() else None
+
+    success, msg, denied_data = MovementService.report_alcohol_violation(
+        uid=uid,
+        direction=direction,
+        driver_id=d_id,
+        driver_name=driver_name,
+        operator_user=current_user,
+        remarks=remarks,
+        device_id=device_id,
+        vehicle_id=v_id
+    )
+
+    if not success:
+        return jsonify({"success": False, "message": msg}), 400
+
+    return jsonify({
+        "success": True,
+        "message": msg,
+        "data": denied_data
+    }), 200
