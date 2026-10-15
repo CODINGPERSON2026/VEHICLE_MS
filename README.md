@@ -1,5 +1,5 @@
 # Smart RFID + ANPR Vehicle Gate Management System
-
+edge://settings/content/mediaAutoplay
 A production-grade Smart Vehicle Gate Entry & Exit Management System built with **Python Flask**, **MySQL / MySQL Workbench**, **ESP32-WROOM-32**, **RC522 RFID**, **Bootstrap 5**, and an extensible **OpenCV / ANPR** architecture.
 
 ---
