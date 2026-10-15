@@ -13,6 +13,9 @@ tts_bp = Blueprint('tts', __name__)
 
 VOICE = 'en-IN-NeerjaExpressiveNeural'  # Google en-in Neerja (Expressive Indian female voice)
 
+_AUDIO_CACHE = {}
+_CACHE_LOCK = threading.Lock()
+
 def _run_edge_tts_sync(text: str) -> bytes:
     """Run edge-tts in a fresh event loop (thread-safe for Flask)."""
     try:
@@ -28,7 +31,7 @@ def _run_edge_tts_sync(text: str) -> bytes:
 
         loop = asyncio.new_event_loop()
         try:
-            loop.run_until_complete(asyncio.wait_for(_generate(), timeout=3.5))
+            loop.run_until_complete(asyncio.wait_for(_generate(), timeout=5.0))
         finally:
             loop.close()
 
@@ -88,6 +91,19 @@ def speak():
     if len(text) > 400:
         text = text[:400]
 
+    # Check cache first for 0ms latency on repeated announcements
+    with _CACHE_LOCK:
+        if text in _AUDIO_CACHE:
+            cached_bytes, cached_type = _AUDIO_CACHE[text]
+            return Response(
+                cached_bytes,
+                mimetype=cached_type,
+                headers={
+                    'Cache-Control': 'public, max-age=86400',
+                    'Content-Length': str(len(cached_bytes)),
+                }
+            )
+
     # Try high-quality Edge TTS first
     try:
         audio_bytes = _run_edge_tts_sync(text)
@@ -100,11 +116,16 @@ def speak():
         except Exception as fb_err:
             abort(500, f"TTS generation failed: {e}; Fallback failed: {fb_err}")
 
+    # Cache response (up to 300 entries)
+    with _CACHE_LOCK:
+        if len(_AUDIO_CACHE) < 300:
+            _AUDIO_CACHE[text] = (audio_bytes, content_type)
+
     return Response(
         audio_bytes,
         mimetype=content_type,
         headers={
-            'Cache-Control': 'no-store',
+            'Cache-Control': 'public, max-age=86400',
             'Content-Length': str(len(audio_bytes)),
         }
     )
