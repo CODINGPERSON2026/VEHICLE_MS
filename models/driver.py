@@ -55,6 +55,16 @@ class Driver(db.Model):
         if self.authorized_vehicle_types:
             return [t.strip() for t in self.authorized_vehicle_types.split(',') if t.strip()]
         return []
+
+    def is_authorized_for_type(self, v_type):
+        if not v_type:
+            return False
+        if self.auth_status and self.auth_status.strip().upper() == 'NOT AUTHORIZED':
+            return False
+        if not self.authorized_vehicle_types:
+            return False
+        types = [t.strip().upper() for t in self.authorized_types_list]
+        return v_type.strip().upper() in types
     
     def __repr__(self):
         return f"<Driver {self.name} ({self.armynumber or 'No Army No'})>"

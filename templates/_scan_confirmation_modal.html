@@ -56,7 +56,7 @@
                 <span class="fw-bold text-uppercase small text-secondary">
                   <i class="fa-solid fa-id-card-clip me-1 text-primary"></i> Driver Details
                 </span>
-                <span class="badge bg-primary-subtle text-primary border" style="font-size: 0.7rem;">ASSIGNED</span>
+                <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 fw-semibold" id="modal-confirm-driver-auth-badge" style="font-size: 0.72rem;">AUTHORIZED</span>
               </div>
 
               <!-- Driver Name & Avatar -->
@@ -70,6 +70,10 @@
                   <div class="text-muted small mt-1">
                     <span id="modal-confirm-driver-rank" class="fw-semibold text-secondary">Staff Driver</span> &bull; 
                     <span id="modal-confirm-driver-army" class="font-monospace">Army No: -</span>
+                  </div>
+                  <div class="small mt-1 text-truncate" style="font-size: 0.72rem;" id="modal-confirm-driver-authtypes-wrap" title="Authorized Vehicle Types">
+                    <span class="text-secondary fw-semibold"><i class="fa-solid fa-certificate me-1 text-primary"></i>Auth Types:</span>
+                    <span id="modal-confirm-driver-authtypes" class="text-dark font-monospace">-</span>
                   </div>
                 </div>
               </div>
@@ -103,6 +107,17 @@
           <span id="modal-confirm-status-alert"></span>
           <span id="modal-confirm-status-text"></span>
           <input type="text" id="modal-confirm-remarks" value="">
+        </div>
+
+        <!-- Driver Vehicle Authorization Conflict Alert -->
+        <div id="modal-driver-auth-alert" class="alert alert-danger py-2 px-3 rounded-3 mb-3 d-none align-items-center gap-2 border border-danger shadow-sm">
+          <i class="fa-solid fa-triangle-exclamation fs-4 flex-shrink-0 text-danger"></i>
+          <div>
+            <div class="fw-bold small text-danger" id="modal-driver-auth-title">DRIVER NOT AUTHORIZED FOR THIS VEHICLE!</div>
+            <div class="small" id="modal-driver-auth-msg" style="font-size: 0.78rem;">
+              Driver does not have authorization for this vehicle type.
+            </div>
+          </div>
         </div>
 
         <!-- Direction Conflict Alert -->

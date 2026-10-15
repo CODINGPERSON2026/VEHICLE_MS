@@ -1440,6 +1440,67 @@ async function simulateSobrietyTest(val) {
   }
 }
 
+// ---------------- Driver Vehicle Authorization Helper Logic ---------------- //
+function checkDriverAuthorizedForVehicle(authTypesStr, vehType, authStatus) {
+  if (authStatus && authStatus.trim().toUpperCase() === 'NOT AUTHORIZED') {
+    return false;
+  }
+  if (!vehType) return false;
+  if (!authTypesStr) return false;
+  const types = authTypesStr.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
+  return types.includes(vehType.trim().toUpperCase());
+}
+
+function updateDriverVehicleAuthUI(isDriverAuth, authTypesStr, driverName, vehType, isVehicleAuth) {
+  const driverAuthBadge = document.getElementById('modal-confirm-driver-auth-badge');
+  const authBadge = document.getElementById('modal-confirm-auth-badge');
+  const authTypesElem = document.getElementById('modal-confirm-driver-authtypes');
+  const alertEl = document.getElementById('modal-driver-auth-alert');
+  const alertTitle = document.getElementById('modal-driver-auth-title');
+  const alertMsg = document.getElementById('modal-driver-auth-msg');
+
+  if (authTypesElem) {
+    authTypesElem.textContent = authTypesStr ? authTypesStr : 'None';
+  }
+
+  if (driverAuthBadge) {
+    if (isDriverAuth) {
+      driverAuthBadge.className = 'badge bg-success-subtle text-success border border-success-subtle px-2 py-1 fw-semibold';
+      driverAuthBadge.innerHTML = '<i class="fa-solid fa-circle-check me-1"></i>AUTHORIZED';
+    } else {
+      driverAuthBadge.className = 'badge bg-danger text-white border border-danger px-2 py-1 fw-bold';
+      driverAuthBadge.innerHTML = '<i class="fa-solid fa-triangle-exclamation me-1"></i>NOT AUTHORIZED';
+    }
+  }
+
+  // Under vehicle plate: NOT AUTHORIZED if either vehicle is not authorized OR driver is not authorized for vehicle
+  if (authBadge) {
+    const overallAuth = (isVehicleAuth !== false) && isDriverAuth;
+    if (overallAuth) {
+      authBadge.className = 'badge bg-success-subtle text-success border border-success-subtle px-3 py-1 fs-6 fw-semibold';
+      authBadge.textContent = 'AUTHORIZED';
+    } else {
+      authBadge.className = 'badge bg-danger text-white border border-danger px-3 py-1 fs-6 fw-bold';
+      authBadge.innerHTML = '<i class="fa-solid fa-triangle-exclamation me-1"></i>NOT AUTHORIZED';
+    }
+  }
+
+  // Warning alert banner in modal
+  if (alertEl) {
+    if (!isDriverAuth) {
+      alertEl.classList.remove('d-none');
+      alertEl.classList.add('d-flex');
+      if (alertTitle) alertTitle.textContent = `DRIVER NOT AUTHORIZED FOR ${vehType ? vehType.toUpperCase() : 'THIS VEHICLE'}!`;
+      if (alertMsg) {
+        alertMsg.innerHTML = `Driver <strong>${driverName || 'Selected Driver'}</strong> is <strong>NOT AUTHORIZED</strong> to operate vehicle type <strong>${vehType || 'N/A'}</strong>.<br><span class="opacity-75">Driver's authorized vehicle types: ${authTypesStr || 'None'}</span>`;
+      }
+    } else {
+      alertEl.classList.add('d-none');
+      alertEl.classList.remove('d-flex');
+    }
+  }
+}
+
 // ---------------- Scan Confirmation Modal Logic ---------------- //
 function openScanConfirmationModal(scanData) {
   if (!scanData || !scanData.vehicle) return;
@@ -1476,16 +1537,10 @@ function openScanConfirmationModal(scanData) {
   if (plateElem) plateElem.textContent = scanData.vehicle.registration_number || 'UNKNOWN';
 
   const typeElem = document.getElementById('modal-confirm-type');
-  if (typeElem) typeElem.textContent = scanData.vehicle.vehicle_type || 'N/A';
+  const vehType = (scanData.vehicle && scanData.vehicle.vehicle_type) || '';
+  if (typeElem) typeElem.textContent = vehType || 'N/A';
 
-  const authBadge = document.getElementById('modal-confirm-auth-badge');
-  if (authBadge) {
-    const isAuth = scanData.vehicle.auth_status === 'AUTHORIZED';
-    authBadge.className = isAuth 
-      ? 'badge bg-success-subtle text-success border border-success-subtle px-3 py-1 fs-6 fw-semibold' 
-      : 'badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-1 fs-6 fw-semibold';
-    authBadge.textContent = scanData.vehicle.auth_status || 'NOT AUTHORIZED';
-  }
+  const isVehAuth = scanData.vehicle ? (scanData.vehicle.auth_status === 'AUTHORIZED') : true;
 
   // Current Location Status Pill - Harmonized Clean Style
   const statusPill = document.getElementById('modal-confirm-status-pill');
@@ -1500,7 +1555,8 @@ function openScanConfirmationModal(scanData) {
     }
   }
 
-  // Driver Details
+  // Driver Details & Authorization verification
+  scanData.initial_driver = Object.assign({}, scanData.driver || {});
   const driverNameElem = document.getElementById('modal-confirm-driver-name');
   if (driverNameElem) driverNameElem.textContent = scanData.driver.name || 'Registered Driver';
 
@@ -1513,10 +1569,19 @@ function openScanConfirmationModal(scanData) {
   const driverMobileElem = document.getElementById('modal-confirm-driver-mobile');
   if (driverMobileElem) driverMobileElem.textContent = scanData.driver.mobile || 'N/A';
 
-  // Driver Selector
+  const initAuthTypes = (scanData.driver && scanData.driver.authorized_vehicle_types) || '';
+  const initAuthStatus = (scanData.driver && scanData.driver.auth_status) || 'AUTHORIZED';
+  const isInitialDriverAuth = scanData.driver && scanData.driver.is_authorized_for_vehicle !== undefined
+    ? scanData.driver.is_authorized_for_vehicle
+    : checkDriverAuthorizedForVehicle(initAuthTypes, vehType, initAuthStatus);
+
+  updateDriverVehicleAuthUI(isInitialDriverAuth, initAuthTypes, scanData.driver ? scanData.driver.name : '', vehType, isVehAuth);
+
+  // Driver Selector with Authorization tagging
   const driverSelect = document.getElementById('modal-confirm-driver-select');
   if (driverSelect) {
-    driverSelect.innerHTML = `<option value="">-- Keep Assigned Driver (${scanData.driver.name}) --</option>`;
+    const keepTag = isInitialDriverAuth ? '' : ' - [NOT AUTHORIZED]';
+    driverSelect.innerHTML = `<option value="">-- Keep Assigned Driver (${scanData.driver.name})${keepTag} --</option>`;
     if (scanData.pool_drivers && Array.isArray(scanData.pool_drivers)) {
       scanData.pool_drivers.forEach(d => {
         const opt = document.createElement('option');
@@ -1525,7 +1590,20 @@ function openScanConfirmationModal(scanData) {
         opt.dataset.driverRank = d.rank || '';
         opt.dataset.driverArmy = d.armynumber || '';
         opt.dataset.driverMobile = d.mobile || '';
-        opt.textContent = `${d.name} (${d.rank || d.armynumber || 'Driver'})`;
+        opt.dataset.authTypes = d.authorized_vehicle_types || '';
+        opt.dataset.authStatus = d.auth_status || 'AUTHORIZED';
+
+        const isDrvAuth = d.is_authorized_for_vehicle !== undefined
+          ? d.is_authorized_for_vehicle
+          : checkDriverAuthorizedForVehicle(d.authorized_vehicle_types, vehType, d.auth_status);
+        opt.dataset.isAuthorized = isDrvAuth ? 'true' : 'false';
+
+        const statusLabel = isDrvAuth ? '• AUTHORIZED' : '• ⚠️ NOT AUTHORIZED';
+        opt.textContent = `${d.name} (${d.rank || d.armynumber || 'Driver'}) ${statusLabel}`;
+        if (!isDrvAuth) {
+          opt.style.color = '#dc2626';
+          opt.style.fontWeight = '600';
+        }
         driverSelect.appendChild(opt);
       });
     }
@@ -1628,27 +1706,43 @@ async function onConfirmDriverChanged(driverId) {
   const mobileElem = document.getElementById('modal-confirm-driver-mobile');
 
   let newDriverName = (currentPendingScan.driver && currentPendingScan.driver.name) || 'Assigned Driver';
+  const vehType = (currentPendingScan.vehicle && currentPendingScan.vehicle.vehicle_type) || '';
+  const isVehAuth = currentPendingScan.vehicle ? (currentPendingScan.vehicle.auth_status === 'AUTHORIZED') : true;
+
+  let authTypes = '';
+  let authStatus = 'AUTHORIZED';
+  let isDrvAuth = false;
 
   if (!driverId) {
     // Reset to initial driver
-    if (currentPendingScan.driver) {
-      newDriverName = currentPendingScan.driver.name;
-      if (nameElem) nameElem.textContent = currentPendingScan.driver.name;
-      if (rankElem) rankElem.textContent = currentPendingScan.driver.rank || 'Staff Driver';
-      if (armyElem) armyElem.textContent = currentPendingScan.driver.armynumber ? `Army No: ${currentPendingScan.driver.armynumber}` : '';
-      if (mobileElem) mobileElem.textContent = currentPendingScan.driver.mobile || 'N/A';
+    const initDrv = currentPendingScan.initial_driver || currentPendingScan.driver;
+    if (initDrv) {
+      newDriverName = initDrv.name;
+      authTypes = initDrv.authorized_vehicle_types || '';
+      authStatus = initDrv.auth_status || 'AUTHORIZED';
+      isDrvAuth = checkDriverAuthorizedForVehicle(authTypes, vehType, authStatus);
+      if (nameElem) nameElem.textContent = initDrv.name;
+      if (rankElem) rankElem.textContent = initDrv.rank || 'Staff Driver';
+      if (armyElem) armyElem.textContent = initDrv.armynumber ? `Army No: ${initDrv.armynumber}` : '';
+      if (mobileElem) mobileElem.textContent = initDrv.mobile || 'N/A';
     }
   } else {
     const selectedOpt = select.options[select.selectedIndex];
     if (selectedOpt) {
       newDriverName = selectedOpt.dataset.driverName || selectedOpt.getAttribute('data-driver-name') || selectedOpt.text.split('(')[0].trim();
+      authTypes = selectedOpt.dataset.authTypes || '';
+      authStatus = selectedOpt.dataset.authStatus || 'AUTHORIZED';
+      isDrvAuth = selectedOpt.dataset.isAuthorized === 'true' || checkDriverAuthorizedForVehicle(authTypes, vehType, authStatus);
       if (nameElem) nameElem.textContent = newDriverName;
       if (rankElem) rankElem.textContent = selectedOpt.dataset.driverRank || 'Pool Driver';
       if (armyElem) armyElem.textContent = selectedOpt.dataset.driverArmy ? `Army No: ${selectedOpt.dataset.driverArmy}` : '';
       if (mobileElem) mobileElem.textContent = selectedOpt.dataset.driverMobile || 'N/A';
     }
-    console.log("VMS: New driver selected ->", newDriverName);
+    console.log("VMS: New driver selected ->", newDriverName, "Authorized for vehicle?", isDrvAuth);
   }
+
+  // Update Authorization Badges & Alert immediately
+  updateDriverVehicleAuthUI(isDrvAuth, authTypes, newDriverName, vehType, isVehAuth);
 
   // Critical requirement: Reset sobriety state to AWAITING_TEST for the replacement driver!
   currentSobrietyState = 'AWAITING_TEST';
@@ -1665,6 +1759,9 @@ async function onConfirmDriverChanged(driverId) {
       currentPendingScan.driver = currentPendingScan.driver || {};
       currentPendingScan.driver.id = driverId;
       currentPendingScan.driver.name = newDriverName;
+      currentPendingScan.driver.authorized_vehicle_types = authTypes;
+      currentPendingScan.driver.auth_status = authStatus;
+      currentPendingScan.driver.is_authorized_for_vehicle = isDrvAuth;
     }
   }
 
@@ -1690,7 +1787,12 @@ async function onConfirmDriverChanged(driverId) {
     });
     const resData = await resp.json();
     if (resData.success && resData.pending_scan) {
+      const savedInit = currentPendingScan.initial_driver;
       currentPendingScan = resData.pending_scan;
+      currentPendingScan.initial_driver = savedInit;
+      if (resData.pending_scan.driver && resData.pending_scan.driver.is_authorized_for_vehicle !== undefined) {
+        updateDriverVehicleAuthUI(resData.pending_scan.driver.is_authorized_for_vehicle, resData.pending_scan.driver.authorized_vehicle_types, newDriverName, vehType, isVehAuth);
+      }
     }
   } catch (err) {
     console.warn('Failed to update driver on backend:', err);
@@ -1720,6 +1822,30 @@ async function confirmScan(direction) {
     return;
   }
 
+  const driverSelect = document.getElementById('modal-confirm-driver-select');
+  let selectedDriverId = null;
+  let selectedDriverName = null;
+  let isDriverAuthorized = true;
+
+  if (driverSelect && driverSelect.value) {
+    selectedDriverId = driverSelect.value;
+    const selectedOpt = driverSelect.options[driverSelect.selectedIndex];
+    selectedDriverName = selectedOpt ? selectedOpt.dataset.driverName : null;
+    isDriverAuthorized = selectedOpt ? (selectedOpt.dataset.isAuthorized === 'true') : true;
+  } else {
+    selectedDriverName = currentPendingScan.driver.name;
+    selectedDriverId = currentPendingScan.driver.id;
+    isDriverAuthorized = currentPendingScan.driver && currentPendingScan.driver.is_authorized_for_vehicle !== false;
+  }
+
+  if (!isDriverAuthorized) {
+    const vehType = (currentPendingScan.vehicle && currentPendingScan.vehicle.vehicle_type) || 'Vehicle';
+    const proceed = confirm(`⚠️ UNAUTHORIZED WARNING: Driver ${selectedDriverName || 'Selected Driver'} is NOT AUTHORIZED to operate vehicle type '${vehType}'.\n\nDo you want to proceed under manual supervisor override?`);
+    if (!proceed) {
+      return;
+    }
+  }
+
   const btnIn = document.getElementById('btn-confirm-in');
   const btnOut = document.getElementById('btn-confirm-out');
   const targetBtn = direction === 'ENTRY' ? btnIn : btnOut;
@@ -1729,19 +1855,6 @@ async function confirmScan(direction) {
 
   if (targetBtn) {
     targetBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Confirming...';
-  }
-
-  const driverSelect = document.getElementById('modal-confirm-driver-select');
-  let selectedDriverId = null;
-  let selectedDriverName = null;
-
-  if (driverSelect && driverSelect.value) {
-    selectedDriverId = driverSelect.value;
-    const selectedOpt = driverSelect.options[driverSelect.selectedIndex];
-    selectedDriverName = selectedOpt ? selectedOpt.dataset.driverName : null;
-  } else {
-    selectedDriverName = currentPendingScan.driver.name;
-    selectedDriverId = currentPendingScan.driver.id;
   }
 
   const remarksInput = document.getElementById('modal-confirm-remarks');

@@ -154,13 +154,21 @@ class RFIDService:
             (Driver.armynumber == vehicle.armynumber if vehicle.armynumber else False)
         ).first()
 
+        veh_type = vehicle.vehicle_type if vehicle else None
+        is_drv_auth = False
+        if drv_record and veh_type:
+            is_drv_auth = drv_record.is_authorized_for_type(veh_type)
+
         driver_info = {
             "name": assigned_driver_name,
             "armynumber": drv_record.armynumber if drv_record and drv_record.armynumber else (vehicle.armynumber or "N/A"),
             "rank": drv_record.driver_rank if drv_record and drv_record.driver_rank else (drv_record.designation if drv_record else "Driver"),
             "designation": drv_record.designation if drv_record else "Vehicle Operator",
             "mobile": drv_record.mobile_number if drv_record and drv_record.mobile_number else (vehicle.mobile_number or "N/A"),
-            "id": drv_record.id if drv_record else None
+            "id": drv_record.id if drv_record else None,
+            "auth_status": drv_record.auth_status if drv_record else "NOT AUTHORIZED",
+            "authorized_vehicle_types": drv_record.authorized_vehicle_types if drv_record else "",
+            "is_authorized_for_vehicle": is_drv_auth
         }
 
         active_trip_info = None
@@ -174,12 +182,16 @@ class RFIDService:
         pool_drivers = []
         all_drivers = Driver.query.filter_by(is_active=True).order_by(Driver.name.asc()).all()
         for d in all_drivers:
+            d_is_auth = d.is_authorized_for_type(veh_type) if veh_type else False
             pool_drivers.append({
                 "id": d.id,
                 "name": d.name,
                 "armynumber": d.armynumber or "",
                 "rank": d.driver_rank or d.designation or "",
-                "mobile": d.mobile_number or ""
+                "mobile": d.mobile_number or "",
+                "auth_status": d.auth_status or "NOT AUTHORIZED",
+                "authorized_vehicle_types": d.authorized_vehicle_types or "",
+                "is_authorized_for_vehicle": d_is_auth
             })
 
         return {
@@ -312,15 +324,24 @@ class RFIDService:
             from models.driver import Driver
             d_id = int(driver_id) if driver_id and str(driver_id).isdigit() else None
             drv = Driver.query.get(d_id) if d_id else None
+            veh_type = None
+            if _pending_scan_buffer.get('data') and _pending_scan_buffer['data'].get('vehicle'):
+                veh_type = _pending_scan_buffer['data']['vehicle'].get('vehicle_type')
+
             if drv:
+                is_drv_auth = drv.is_authorized_for_type(veh_type) if veh_type else False
                 _pending_scan_buffer['data']['driver'] = {
                     'id': drv.id,
                     'name': drv.name,
                     'rank': drv.driver_rank or 'Pool Driver',
                     'armynumber': drv.armynumber,
                     'mobile': drv.mobile_number,
-                    'designation': drv.designation
+                    'designation': drv.designation,
+                    'auth_status': drv.auth_status or 'NOT AUTHORIZED',
+                    'authorized_vehicle_types': drv.authorized_vehicle_types or '',
+                    'is_authorized_for_vehicle': is_drv_auth
                 }
+                _pending_scan_buffer['data']['driver_authorized_for_vehicle'] = is_drv_auth
             elif driver_name:
                 _pending_scan_buffer['data']['driver'] = {
                     'id': None,
@@ -328,8 +349,12 @@ class RFIDService:
                     'rank': rank or 'Pool Driver',
                     'armynumber': army,
                     'mobile': mobile,
-                    'designation': 'Driver'
+                    'designation': 'Driver',
+                    'auth_status': 'NOT AUTHORIZED',
+                    'authorized_vehicle_types': '',
+                    'is_authorized_for_vehicle': False
                 }
+                _pending_scan_buffer['data']['driver_authorized_for_vehicle'] = False
             # Reset sobriety test so new driver MUST blow into MQ-3 detector!
             _pending_scan_buffer['data']['alcohol_value'] = None
             _pending_scan_buffer['data']['alcohol_detected'] = False
