@@ -556,12 +556,53 @@ function triggerBarrierOpen(delaySec = 4) {
 }
 
 // ---------------- Audio Feedback (Web Audio API Synthesizer) ---------------- //
+let _sharedAudioCtx = null;
+function getAudioContext() {
+  try {
+    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtxClass) return null;
+    if (!_sharedAudioCtx) {
+      _sharedAudioCtx = new AudioCtxClass();
+    }
+    if (_sharedAudioCtx.state === 'suspended') {
+      _sharedAudioCtx.resume().catch(() => {});
+    }
+    return _sharedAudioCtx;
+  } catch (e) {
+    return null;
+  }
+}
+
+function initAudioAutoplayUnlock() {
+  const unlock = () => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      if ('speechSynthesis' in window) {
+        const silent = new SpeechSynthesisUtterance(' ');
+        silent.volume = 0;
+        window.speechSynthesis.speak(silent);
+      }
+    } catch (e) {}
+    window.removeEventListener('click', unlock);
+    window.removeEventListener('keydown', unlock);
+    window.removeEventListener('pointerdown', unlock);
+    window.removeEventListener('touchstart', unlock);
+  };
+  window.addEventListener('click', unlock, { once: true, passive: true });
+  window.addEventListener('keydown', unlock, { once: true, passive: true });
+  window.addEventListener('pointerdown', unlock, { once: true, passive: true });
+  window.addEventListener('touchstart', unlock, { once: true, passive: true });
+}
+initAudioAutoplayUnlock();
+
 function playChime(isSuccess) {
   if (!voiceAnnouncementsEnabled) return;
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
+    const ctx = getAudioContext();
+    if (!ctx || ctx.state === 'suspended') return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -590,9 +631,8 @@ function playChime(isSuccess) {
 function playAttentionSound() {
   if (!voiceAnnouncementsEnabled) return;
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
+    const ctx = getAudioContext();
+    if (!ctx || ctx.state === 'suspended') return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -778,7 +818,11 @@ async function speakWithNeerjaGoogleVoice(text, onEndedCallback) {
 
   utterance.onend = finish;
   utterance.onerror = (e) => {
-    console.warn("SpeechSynthesis error:", e);
+    if (e.error === 'not-allowed') {
+      console.warn("VMS Audio: Autoplay blocked by browser policy. Click anywhere on the page once to enable sound, or set Media Autoplay to Allow in Edge settings.");
+    } else {
+      console.warn("SpeechSynthesis error:", e);
+    }
     finish();
   };
 
